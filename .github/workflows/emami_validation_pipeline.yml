@@ -55,12 +55,8 @@ jobs:
           sf org login jwt --client-id ${{secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }} \
                  --jwt-key-file server.key \
                  --username ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} \
-                 --instance-url https://test.salesforce.com \
-                 --set-default-org
-				 
-				 
-                  
-      
+                 --instance-url https://login.salesforce.com \
+                 --set-default-org				 				                        
       - name: Run Salesforce Code Analyzer
         id: run-code-analyzer
         uses: forcedotcom/run-code-analyzer@v1
