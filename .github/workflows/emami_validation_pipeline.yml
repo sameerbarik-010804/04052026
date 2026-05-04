@@ -52,7 +52,15 @@ jobs:
   
       - name: Authorize To ${{ github.event.inputs.environment }}
         run: |
-          sfdx force:auth:jwt:grant --client-id=${{secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }} --jwt-key-file=server.key --username=${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} --set-default-dev-hub
+          sf org login jwt --client-id ${{secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }} \
+                 --jwt-key-file server.key \
+                 --username ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} \
+                 --instance-url https://test.salesforce.com \
+                 --set-default-org
+				 
+				 
+                  
+      
       - name: Run Salesforce Code Analyzer
         id: run-code-analyzer
         uses: forcedotcom/run-code-analyzer@v1
@@ -103,7 +111,8 @@ jobs:
           SFDX_Package_Gen: ${{ github.workspace }}/manifest/${{github.event.inputs.Feature_Branch}}_package.xml
           SFDX_testclass: ${{github.event.inputs.specifiedclass}}
         if: ${{ github.event.inputs.testlevel == 'RunSpecifiedTests'}}  
-        run: sfdx force:source:deploy --checkonly -w 500 -x ${SFDX_Package_Gen} --targetusername ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} --testlevel ${{github.event.inputs.testlevel}} --runtests ${SFDX_testclass}
+        run: sf project deploy validate  -x ${SFDX_Package_Gen} --target-org ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} --testlevel ${{github.event.inputs.testlevel}} -tests ${SFDX_testclass} -w 500
+
   Validation_To_EMAMI_QAGlobal:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.environment == 'EMAMI QAGlobal' }}
