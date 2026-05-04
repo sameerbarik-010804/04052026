@@ -41,7 +41,7 @@ jobs:
       - name: Install Salesforce CLI
         run: |
           npm install -g @salesforce/cli@latest
-          sfdx --version
+          sf --version
       - name: Install Salesforce Code Analyzer Plugin
         run: sf plugins install @salesforce/sfdx-scanner@latest
 
@@ -55,17 +55,22 @@ jobs:
           sf org login jwt --client-id ${{secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }} \
                  --jwt-key-file server.key \
                  --username ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} \
-                 --instance-url https://test.salesforce.com                 				 				                        
+                 --instance-url https://test.salesforce.com    
+
       - name: Run Salesforce Code Analyzer
         id: run-code-analyzer
         uses: forcedotcom/run-code-analyzer@v1
         with:
           run-command: run
-          run-arguments: --normalize-severity --target . --outfile results.html --verbose
+          run-arguments: --normalize-severity --target . --outfile results.json --json --verbose
           results-artifact-name: salesforce-code-analyzer-results
-      - name: Print Output
-        id: output
-        run: echo "${{ steps.test-action.outputs.exit-code }}"
+
+      - name: Salesforce Scanner Report
+        run: |
+          echo "| Rule Id | Severity | File | Line | Message |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|------|------|---------|" >> $GITHUB_STEP_SUMMARY
+          jq -r '.issues[] | "|"+(.ruleId)+"|"+(.severity)+"|"+(.file)+"|"+(.line|tostring)+"|"+(.message)+"|"' results.json >> $GITHUB_STEP_SUMMARY
+          
       - name: Check the outputs to determine whether to fail
         if: |
           steps.run-code-analyzer.outputs.exit-code > 0 ||
