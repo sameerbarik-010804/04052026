@@ -106,7 +106,7 @@ jobs:
           SFDX_Package_Gen: ${{ github.workspace }}/manifest/${{github.event.inputs.Feature_Branch}}_package.xml
           SFDX_testclass: ${{github.event.inputs.specifiedclass}}
         if: ${{ github.event.inputs.testlevel == 'RunSpecifiedTests'}}  
-        run: sf project deploy validate  -x ${SFDX_Package_Gen} --target-org ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} --testlevel ${{github.event.inputs.testlevel}} -tests ${SFDX_testclass} -w 500
+        run: sf project deploy validate  -x ${SFDX_Package_Gen} --target-org ${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }} --test-level ${{github.event.inputs.testlevel}} -tests ${SFDX_testclass} -w 500
 
   Validation_To_EMAMI_QAGlobal:
     runs-on: ubuntu-latest
