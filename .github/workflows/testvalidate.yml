@@ -40,8 +40,8 @@ jobs:
             echo "SF_USERNAME=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
             echo "SF_INSTANCE_URL=${{ secrets.UAT_INSTANCE_URL }}" >> $GITHUB_ENV
           elif [ "${{ github.base_ref }}" == "main" ]; then
-            echo "SF_USERNAME=${{ secrets.main_USERNAME }}" >> $GITHUB_ENV
-            echo "SF_INSTANCE_URL=${{ secrets.main_INSTANCE_URL }}" >> $GITHUB_ENV
+            echo "SF_USERNAME=${{ secrets.MAIN_USERNAME }}" >> $GITHUB_ENV
+            echo "SF_INSTANCE_URL=${{ secrets.MAIN_INSTANCE_URL }}" >> $GITHUB_ENV
           else
             echo "Invalid branch"
             exit 1
@@ -71,28 +71,27 @@ jobs:
             --generate-delta
           cat delta/package/package.xml
 
-      - name: Validate Deployment (75% Coverage)
+      - name: Validate Deployment
         run: |
-          if grep -q "<types>" delta/package/package.xml; then
-            echo "Running validation..."
-            sf project deploy validate \
-              --manifest delta/package/package.xml \
-              --target-org targetOrg \
-              --test-level RunLocalTests \
-              --wait 60 \
-              --json > result.json
-            cat result.json
-          else
-            echo "No changes found. Skipping validation."
+          SFDX_Package_Gen="/home/runner/work/04052026/04052026/manifest/${BRANCH}_package.xml"
+          echo "Using package.xml: $SFDX_Package_Gen"
+          DEPLOY_RESULT=$(sf project deploy validate \
+            --target-org "$SF_USERNAME" \
+            --manifest "$SFDX_Package_Gen" \
+            --test-level RunLocalTests \
+            --wait 20 \
+            --ignore-warnings \
+            --json)
+          echo "$DEPLOY_RESULT" > deploy-result.json
 
       - name: Check Result
         run: |
-          if [ -f result.json ]; then
-            STATUS=$(jq -r '.status' result.json)
+          if [ -f deploy-result.json ]; then
+            STATUS=$(jq -r '.status' deploy-result.json)
             if [ "$STATUS" != "0" ]; then
-              echo "Validation Failed ❌"
+              echo "Validation Failed "
               exit 1
             fi
-            echo "Validation Passed ✅"
+            echo "Validation Passed "
           else
             echo "No validation executed"
