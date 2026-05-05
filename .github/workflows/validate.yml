@@ -71,6 +71,18 @@ jobs:
           esac
           echo "Using SF username: $sf_username"
 
+      - name: Install Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli@latest
+          sf --version
+      - name: Install Salesforce Code Analyzer Plugin
+        run: sf plugins install @salesforce/sfdx-scanner@latest
+
+      - name: Generate JWT Key for org
+        shell: bash
+        run: |
+          echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key
+  
       # Authenticate using JWT
       - name: Authenticate via JWT
         run: |
@@ -78,20 +90,29 @@ jobs:
             --client-id "$consumer_key" \
             --jwt-key-file server.key \
             --username "$sf_username" \
-            --instance-url "$instance_url"
+            --instance-url "$instance_url" 
 
-      # Generate or fetch your delta package.xml here (You need to replace this with real delta logic)
-      - name: Generate package.xml manifest
+      - name: Run Salesforce Code Analyzer
+        id: run-code-analyzer
+        uses: forcedotcom/run-code-analyzer@v1
+        with:
+          run-command: run
+          run-arguments: --normalize-severity --target . --outfile results.json --json --verbose
+          results-artifact-name: salesforce-code-analyzer-results
+
+      - name: Salesforce Scanner Report
         run: |
-          echo '<?xml version="1.0" encoding="UTF-8"?>
-          <Package xmlns="http://soap.sforce.com/2006/04/metadata">
-            <types>
-              <members>*</members>
-              <name>ApexClass</name>
-            </types>
-            <version>55.0</version>
-          </Package>' > package.xml
+          echo "| Rule Id | Severity | File | Line | Message |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|------|------|---------|" >> $GITHUB_STEP_SUMMARY
+          jq -r '.[] | "|"+(.ruleId // "n/a")+"|"+(.severity // "n/a")+"|"+(.file // "n/a")+"|"+((.line|tostring) // "n/a")+"|"+(.message // "n/a")+"|"' results.json >> $GITHUB_STEP_SUMMARY
 
+      - name: Check the outputs to determine whether to fail
+        if: |
+          steps.run-code-analyzer.outputs.exit-code > 0 ||
+          steps.run-code-analyzer.outputs.num-sev1-violations > 0 ||
+          steps.run-code-analyzer.outputs.num-violations > 10
+        run: exit 1
+        
       # Run deployment validation including test coverage
       - name: Validate deployment with test coverage
         id: deploy-validate
