@@ -33,7 +33,7 @@ jobs:
           echo "TARGET_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
           echo "Source Branch: ${{ github.head_ref }}"
           echo "Target Branch: ${{ github.base_ref }}"
-      - name: Select Salesforce Org Based on Target Branch
+      - name: Select Salesforce Org Based on Target Branch 
         run: |
           echo "Target Branch: $TARGET_BRANCH"
           if [ "$TARGET_BRANCH" = "SIT" ]; then
