@@ -3,9 +3,9 @@ name: Validate PR Deployment by Environment
 on:
   pull_request:
     branches:
-      - sit
-      - qa
-      - uat
+      - SIT
+      - QA
+      - UAT
       - main
 
 jobs:
@@ -24,28 +24,28 @@ jobs:
           echo "Target branch: $BRANCH"
 
           case "$BRANCH" in
-            sit)
+            SIT)
               echo "consumer_key=${{ secrets.SIT_CONSUMER_KEY }}" >> $GITHUB_ENV
               echo "jwt_key_base64=${{ secrets.SIT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
               echo "sf_username=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
               ;;
-            qa)
+            QA)
               echo "consumer_key=${{ secrets.QA_CONSUMER_KEY }}" >> $GITHUB_ENV
               echo "jwt_key_base64=${{ secrets.QA_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
               echo "sf_username=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://test.salesforce.com" >> $GITHUB_ENV
               ;;
-            uat)
+            UAT)
               echo "consumer_key=${{ secrets.UAT_CONSUMER_KEY }}" >> $GITHUB_ENV
               echo "jwt_key_base64=${{ secrets.UAT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
               echo "sf_username=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
               ;;
-            prod)
-              echo "consumer_key=${{ secrets.PROD_CONSUMER_KEY }}" >> $GITHUB_ENV
-              echo "jwt_key_base64=${{ secrets.PROD_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
-              echo "sf_username=${{ secrets.PROD_USERNAME }}" >> $GITHUB_ENV
+            main)
+              echo "consumer_key=${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }}" >> $GITHUB_ENV
+              echo "jwt_key_base64=${{ secrets.SALESFORCE_JWT_SECRET_KEY  }}" >> $GITHUB_ENV
+              echo "sf_username=${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
               ;;
             *)
@@ -86,9 +86,10 @@ jobs:
       - name: Validate deployment with test coverage
         id: deploy-validate
         run: |
+          SFDX_Package_Gen: ${{ github.workspace }}/manifest/$BRANCH_package.xml
           DEPLOY_RESULT=$(sf project deploy validate \
             --target-org "$sf_username" \
-            --manifest package.xml \
+            -x ${SFDX_Package_Gen} \
             --test-level RunLocalTests \
             --wait 20 \
             --ignore-warnings \
