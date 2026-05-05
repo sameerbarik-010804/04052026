@@ -71,12 +71,6 @@ jobs:
           esac
           echo "Using SF username: $sf_username"
 
-      # Decode the base64 JWT key to a file
-      - name: Decode JWT key
-        run: |
-          echo "$jwt_key_base64" | base64 -d > server.key
-          chmod 600 server.key
-
       # Authenticate using JWT
       - name: Authenticate via JWT
         run: |
