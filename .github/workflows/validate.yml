@@ -1,0 +1,124 @@
+name: Validate PR Deployment by Environment
+
+on:
+  pull_request:
+    branches:
+      - sit
+      - qa
+      - uat
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Determine environment-specific secrets and vars
+      - name: Set environment variables for SF org
+        id: set-env
+        run: |
+          BRANCH=${{ github.event.pull_request.base.ref }}
+          echo "Target branch: $BRANCH"
+
+          case "$BRANCH" in
+            sit)
+              echo "consumer_key=${{ secrets.SIT_CONSUMER_KEY }}" >> $GITHUB_ENV
+              echo "jwt_key_base64=${{ secrets.SIT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "sf_username=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
+              echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
+              ;;
+            qa)
+              echo "consumer_key=${{ secrets.QA_CONSUMER_KEY }}" >> $GITHUB_ENV
+              echo "jwt_key_base64=${{ secrets.QA_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "sf_username=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
+              echo "instance_url=https://test.salesforce.com" >> $GITHUB_ENV
+              ;;
+            uat)
+              echo "consumer_key=${{ secrets.UAT_CONSUMER_KEY }}" >> $GITHUB_ENV
+              echo "jwt_key_base64=${{ secrets.UAT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "sf_username=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
+              echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "consumer_key=${{ secrets.PROD_CONSUMER_KEY }}" >> $GITHUB_ENV
+              echo "jwt_key_base64=${{ secrets.PROD_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "sf_username=${{ secrets.PROD_USERNAME }}" >> $GITHUB_ENV
+              echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Unsupported branch '$BRANCH'. Failing."
+              exit 1
+              ;;
+          esac
+          echo "Using SF username: $sf_username"
+
+      # Decode the base64 JWT key to a file
+      - name: Decode JWT key
+        run: |
+          echo "$jwt_key_base64" | base64 -d > server.key
+          chmod 600 server.key
+
+      # Authenticate using JWT
+      - name: Authenticate via JWT
+        run: |
+          sf org login jwt \
+            --client-id "$consumer_key" \
+            --jwt-key-file server.key \
+            --username "$sf_username" \
+            --instance-url "$instance_url"
+
+      # Generate or fetch your delta package.xml here (You need to replace this with real delta logic)
+      - name: Generate package.xml manifest
+        run: |
+          echo '<?xml version="1.0" encoding="UTF-8"?>
+          <Package xmlns="http://soap.sforce.com/2006/04/metadata">
+            <types>
+              <members>*</members>
+              <name>ApexClass</name>
+            </types>
+            <version>55.0</version>
+          </Package>' > package.xml
+
+      # Run deployment validation including test coverage
+      - name: Validate deployment with test coverage
+        id: deploy-validate
+        run: |
+          DEPLOY_RESULT=$(sf project deploy validate \
+            --target-org "$sf_username" \
+            --manifest package.xml \
+            --test-level RunLocalTests \
+            --wait 20 \
+            --ignore-warnings \
+            --json)
+
+          echo "$DEPLOY_RESULT" > deploy-result.json
+
+          STATUS=$(jq -r '.result.status' deploy-result.json)
+          TEST_COVERAGE=$(jq -r '.result.details?.testCoverage' deploy-result.json)
+
+          # Fallback: If .testCoverage is not found, try another path or fail gracefully
+          if [ -z "$TEST_COVERAGE" ] || [ "$TEST_COVERAGE" == "null" ]; then
+            echo "Test coverage information not found in the deployment result."
+            exit 1
+          fi
+
+          echo "Deployment status: $STATUS"
+          echo "Test coverage: $TEST_COVERAGE%"
+
+          if [ "$STATUS" != "Succeeded" ]; then
+            echo "Deployment validation failed."
+            exit 1
+          fi
+
+          COVERAGE_INT=${TEST_COVERAGE%.*}
+          if [ "$COVERAGE_INT" -lt 75 ]; then
+            echo "Test coverage ($TEST_COVERAGE%) is less than required 75%."
+            exit 1
+          fi
+
+      - name: Success message
+        if: success()
+        run: echo "Deployment validation succeeded with test coverage >= 75%"
