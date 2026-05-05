@@ -1,0 +1,98 @@
+name: Salesforce PR Validation
+
+on:
+  pull_request:
+    branches:
+      - SIT
+      - QA
+      - UAT
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli
+          sf --version
+
+      - name: Create JWT Key File
+        run: |
+          echo "${{ secrets.SERVER_KEY }}" > server.key
+          chmod 600 server.key
+
+      - name: Set Org Based on Target Branch
+        run: |
+          echo "Target branch: ${{ github.base_ref }}"
+          if [ "${{ github.base_ref }}" == "SIT" ]; then
+            echo "SF_USERNAME=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
+            echo "SF_INSTANCE_URL=${{ secrets.SIT_INSTANCE_URL }}" >> $GITHUB_ENV
+          elif [ "${{ github.base_ref }}" == "QA" ]; then
+            echo "SF_USERNAME=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
+            echo "SF_INSTANCE_URL=${{ secrets.QA_INSTANCE_URL }}" >> $GITHUB_ENV
+          elif [ "${{ github.base_ref }}" == "UAT" ]; then
+            echo "SF_USERNAME=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
+            echo "SF_INSTANCE_URL=${{ secrets.UAT_INSTANCE_URL }}" >> $GITHUB_ENV
+          elif [ "${{ github.base_ref }}" == "main" ]; then
+            echo "SF_USERNAME=${{ secrets.main_USERNAME }}" >> $GITHUB_ENV
+            echo "SF_INSTANCE_URL=${{ secrets.main_INSTANCE_URL }}" >> $GITHUB_ENV
+          else
+            echo "Invalid branch"
+            exit 1
+
+      - name: Authenticate via JWT
+        run: |
+          sf org login jwt \
+            --client-id "${{ secrets.SF_CLIENT_ID }}" \
+            --jwt-key-file server.key \
+            --username "$SF_USERNAME" \
+            --instance-url "$SF_INSTANCE_URL" \
+            --alias targetOrg \
+            --set-default
+
+      - name: Install Delta Plugin
+        run: |
+          sf plugins install sfdx-git-delta
+
+      - name: Generate Delta package.xml
+        run: |
+          mkdir delta
+          git fetch origin ${{ github.base_ref }}
+          sf sgd source delta \
+            --to HEAD \
+            --from origin/${{ github.base_ref }} \
+            --output delta \
+            --generate-delta
+          cat delta/package/package.xml
+
+      - name: Validate Deployment (75% Coverage)
+        run: |
+          if grep -q "<types>" delta/package/package.xml; then
+            echo "Running validation..."
+            sf project deploy validate \
+              --manifest delta/package/package.xml \
+              --target-org targetOrg \
+              --test-level RunLocalTests \
+              --wait 60 \
+              --json > result.json
+            cat result.json
+          else
+            echo "No changes found. Skipping validation."
+
+      - name: Check Result
+        run: |
+          if [ -f result.json ]; then
+            STATUS=$(jq -r '.status' result.json)
+            if [ "$STATUS" != "0" ]; then
+              echo "Validation Failed ❌"
+              exit 1
+            fi
+            echo "Validation Passed ✅"
+          else
+            echo "No validation executed"
