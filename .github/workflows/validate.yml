@@ -3,9 +3,9 @@ name: Validate PR Deployment by Environment
 on:
   pull_request:
     branches:
-      - sit
-      - qa
-      - uat
+      - SIT
+      - QA
+      - UAT
       - main
 
 jobs:
@@ -22,30 +22,46 @@ jobs:
         run: |
           BRANCH=${{ github.event.pull_request.base.ref }}
           echo "Target branch: $BRANCH"
-
+      
           case "$BRANCH" in
-            sit)
+            SIT)
               echo "consumer_key=${{ secrets.SIT_CONSUMER_KEY }}" >> $GITHUB_ENV
-              echo "jwt_key_base64=${{ secrets.SIT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              
+              echo "jwt_key_base64<<EOF" >> $GITHUB_ENV
+              echo "${{ secrets.SIT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+              
               echo "sf_username=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
               ;;
-            qa)
+            QA)
               echo "consumer_key=${{ secrets.QA_CONSUMER_KEY }}" >> $GITHUB_ENV
-              echo "jwt_key_base64=${{ secrets.QA_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+      
+              echo "jwt_key_base64<<EOF" >> $GITHUB_ENV
+              echo "${{ secrets.QA_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+      
               echo "sf_username=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://test.salesforce.com" >> $GITHUB_ENV
               ;;
-            uat)
+            UAT)
               echo "consumer_key=${{ secrets.UAT_CONSUMER_KEY }}" >> $GITHUB_ENV
-              echo "jwt_key_base64=${{ secrets.UAT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+      
+              echo "jwt_key_base64<<EOF" >> $GITHUB_ENV
+              echo "${{ secrets.UAT_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+      
               echo "sf_username=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
               ;;
-            prod)
-              echo "consumer_key=${{ secrets.PROD_CONSUMER_KEY }}" >> $GITHUB_ENV
-              echo "jwt_key_base64=${{ secrets.PROD_JWT_KEY_BASE64 }}" >> $GITHUB_ENV
-              echo "sf_username=${{ secrets.PROD_USERNAME }}" >> $GITHUB_ENV
+            main)
+              echo "consumer_key=${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }}" >> $GITHUB_ENV
+      
+              echo "jwt_key_base64<<EOF" >> $GITHUB_ENV
+              echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+      
+              echo "sf_username=${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }}" >> $GITHUB_ENV
               echo "instance_url=https://login.salesforce.com" >> $GITHUB_ENV
               ;;
             *)
@@ -55,12 +71,18 @@ jobs:
           esac
           echo "Using SF username: $sf_username"
 
-      # Decode the base64 JWT key to a file
-      - name: Decode JWT key
+      - name: Install Salesforce CLI
         run: |
-          echo "$jwt_key_base64" | base64 -d > server.key
-          chmod 600 server.key
+          npm install -g @salesforce/cli@latest
+          sf --version
+      - name: Install Salesforce Code Analyzer Plugin
+        run: sf plugins install @salesforce/sfdx-scanner@latest
 
+      - name: Generate JWT Key for org
+        shell: bash
+        run: |
+          echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key
+  
       # Authenticate using JWT
       - name: Authenticate via JWT
         run: |
@@ -68,27 +90,37 @@ jobs:
             --client-id "$consumer_key" \
             --jwt-key-file server.key \
             --username "$sf_username" \
-            --instance-url "$instance_url"
+            --instance-url "$instance_url" 
 
-      # Generate or fetch your delta package.xml here (You need to replace this with real delta logic)
-      - name: Generate package.xml manifest
+      - name: Run Salesforce Code Analyzer
+        id: run-code-analyzer
+        uses: forcedotcom/run-code-analyzer@v1
+        with:
+          run-command: run
+          run-arguments: --normalize-severity --target . --outfile results.json --json --verbose
+          results-artifact-name: salesforce-code-analyzer-results
+
+      - name: Salesforce Scanner Report
         run: |
-          echo '<?xml version="1.0" encoding="UTF-8"?>
-          <Package xmlns="http://soap.sforce.com/2006/04/metadata">
-            <types>
-              <members>*</members>
-              <name>ApexClass</name>
-            </types>
-            <version>55.0</version>
-          </Package>' > package.xml
+          echo "| Rule Id | Severity | File | Line | Message |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|------|------|---------|" >> $GITHUB_STEP_SUMMARY
+          jq -r '.[] | "|"+(.ruleId // "n/a")+"|"+(.severity // "n/a")+"|"+(.file // "n/a")+"|"+((.line|tostring) // "n/a")+"|"+(.message // "n/a")+"|"' results.json >> $GITHUB_STEP_SUMMARY
 
+      - name: Check the outputs to determine whether to fail
+        if: |
+          steps.run-code-analyzer.outputs.exit-code > 0 ||
+          steps.run-code-analyzer.outputs.num-sev1-violations > 0 ||
+          steps.run-code-analyzer.outputs.num-violations > 10
+        run: exit 1
+        
       # Run deployment validation including test coverage
       - name: Validate deployment with test coverage
         id: deploy-validate
         run: |
+          SFDX_Package_Gen: ${{ github.workspace }}/manifest/$BRANCH_package.xml
           DEPLOY_RESULT=$(sf project deploy validate \
             --target-org "$sf_username" \
-            --manifest package.xml \
+            -x ${SFDX_Package_Gen} \
             --test-level RunLocalTests \
             --wait 20 \
             --ignore-warnings \
