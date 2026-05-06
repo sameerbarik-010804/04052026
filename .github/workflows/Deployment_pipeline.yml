@@ -205,7 +205,7 @@ jobs:
                 echo "ERROR: Test class file $TEST_CLASS_FILE not found and no specified class input provided."
                 exit 1
               fi
-              TEST_CLASSES=$(paste -sd "," "$TEST_CLASS_FILE")
+              TEST_CLASSES=$(paste -sd " " "$TEST_CLASS_FILE")
               echo "Using test classes from file: $TEST_CLASSES"
               echo "test_classes=$TEST_CLASSES" >> $GITHUB_OUTPUT
             else
