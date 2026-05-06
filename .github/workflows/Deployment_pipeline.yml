@@ -29,7 +29,7 @@ on:
         required: true
       specifiedclass:
         type: string
-        description: Test class names (comma separated, required if RunSpecifiedTests)
+        description: Test class names (space separated, required if RunSpecifiedTests)
         required: false
 
   push:
@@ -91,7 +91,6 @@ jobs:
           if [ -n "${{ github.event.inputs.environment }}" ]; then
             echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
           else
-            # fallback for push events
             case "${GITHUB_REF##*/}" in
               QA) echo "ENVIRONMENT=QA" >> $GITHUB_ENV ;;
               UAT) echo "ENVIRONMENT=UAT" >> $GITHUB_ENV ;;
@@ -106,7 +105,12 @@ jobs:
             echo "TEST_LEVEL=RunSpecifiedTests" >> $GITHUB_ENV
           fi
 
-          echo "SPECIFIED_CLASS='${{ github.event.inputs.specifiedclass || '' }}'" >> $GITHUB_ENV
+          # Handle possible empty input for specified class
+          SPECIFIED_CLASS="${{ github.event.inputs.specifiedclass }}"
+          if [[ "$SPECIFIED_CLASS" == "''" ]]; then
+            SPECIFIED_CLASS=""
+          fi
+          echo "SPECIFIED_CLASS=$SPECIFIED_CLASS" >> $GITHUB_ENV
 
       - name: Checkout source code (feature branch)
         uses: actions/checkout@v4
@@ -150,7 +154,7 @@ jobs:
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_PROD }}" >> $GITHUB_OUTPUT
               ;;
             *)
-              echo "Error: Unsupported environment ${{ env.ENVIRONMENT }}"
+              echo "Unsupported environment ${{ env.ENVIRONMENT }}"
               exit 1
               ;;
           esac
@@ -199,19 +203,22 @@ jobs:
         id: prepare-tests
         run: |
           if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
-            if [[ -z "${{ env.SPECIFIED_CLASS }}" || "${{ env.SPECIFIED_CLASS }}" == "''" ]]; then
+            if [[ -z "${{ env.SPECIFIED_CLASS }}" ]]; then
               TEST_CLASS_FILE="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_TestClass.txt"
               if [[ ! -f "$TEST_CLASS_FILE" ]]; then
                 echo "ERROR: Test class file $TEST_CLASS_FILE not found and no specified class input provided."
                 exit 1
               fi
-              TEST_CLASSES=$(paste -sd " " "$TEST_CLASS_FILE")
+              TEST_CLASSES=$(paste -sd ' ' "$TEST_CLASS_FILE")
               echo "Using test classes from file: $TEST_CLASSES"
               echo "test_classes=$TEST_CLASSES" >> $GITHUB_OUTPUT
             else
               echo "Using specified test classes: ${{ env.SPECIFIED_CLASS }}"
               echo "test_classes=${{ env.SPECIFIED_CLASS }}" >> $GITHUB_OUTPUT
             fi
+          else
+            # For other test levels, leave test_classes empty
+            echo "test_classes=" >> $GITHUB_OUTPUT
           fi
 
       - name: Deployment Validation
@@ -219,24 +226,42 @@ jobs:
         run: |
           MANIFEST="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_package.xml"
           echo "Validating deployment of manifest: $MANIFEST"
+          TEST_LEVEL="${{ env.TEST_LEVEL }}"
+          TEST_CLASSES="${{ steps.prepare-tests.outputs.test_classes }}"
+          ORG_USERNAME="${{ steps.set-org.outputs.USERNAME }}"
 
-          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
-            sf project deploy validate --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level RunSpecifiedTests --tests "${{ steps.prepare-tests.outputs.test_classes }}" --wait 30
-          else
-            sf project deploy validate --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level "${{ env.TEST_LEVEL }}" --wait 30
+          echo "Test level: $TEST_LEVEL"
+          echo "Test classes: $TEST_CLASSES"
+
+          CMD=(sf project deploy validate --manifest "$MANIFEST" --target-org "$ORG_USERNAME" --test-level "$TEST_LEVEL" --wait 30 --ignore-warnings)
+
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
+            # Add all specified tests as space-separated arguments after one --tests flag
+            CMD+=(--tests $TEST_CLASSES)
           fi
+
+          echo "Running validation command:"
+          echo "${CMD[@]}"
+          "${CMD[@]}"
 
       - name: Deploy to Salesforce Org
         shell: bash
         run: |
           MANIFEST="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_package.xml"
           echo "Deploying manifest: $MANIFEST"
+          TEST_LEVEL="${{ env.TEST_LEVEL }}"
+          TEST_CLASSES="${{ steps.prepare-tests.outputs.test_classes }}"
+          ORG_USERNAME="${{ steps.set-org.outputs.USERNAME }}"
 
-          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
-            sf project deploy start --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level RunSpecifiedTests --tests "${{ steps.prepare-tests.outputs.test_classes }}" --wait 10
-          else
-            sf project deploy start --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level "${{ env.TEST_LEVEL }}" --wait 10
+          CMD=(sf project deploy start --manifest "$MANIFEST" --target-org "$ORG_USERNAME" --test-level "$TEST_LEVEL" --wait 10 --ignore-warnings)
+
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
+            CMD+=(--tests $TEST_CLASSES)
           fi
+
+          echo "Running deploy command:"
+          echo "${CMD[@]}"
+          "${CMD[@]}"
 
       - name: Cleanup JWT key
         if: always()
