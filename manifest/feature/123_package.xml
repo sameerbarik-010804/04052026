@@ -3,6 +3,7 @@
     <types>
         <members>AccountService</members>
         <members>AccountServiceTest</members>
+        <members>AccountServices_Test</members>
         <name>ApexClass</name>
     </types>
     <version>66.0</version>
