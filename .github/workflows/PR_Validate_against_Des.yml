@@ -41,22 +41,22 @@ jobs:
             SIT)
               echo "SF_USERNAME=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
               echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_SIT }}" >> $GITHUB_ENV
               ;;
             QA)
-              echo "SF_USERNAME=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> $GITHUB_ENV
               echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_ENV
               ;;
             UAT)
-              echo "SF_USERNAME=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.PROD_INSTANCE_URL }}" >> $GITHUB_ENV
-              ;;
-            main)
-              echo "SF_USERNAME=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_UAT_USERNAME }}" >> $GITHUB_ENV
               echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
               echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> $GITHUB_ENV
+              ;;
+            main)
+              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> $GITHUB_ENV
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_ENV
               ;;
             *)
               echo "Invalid target branch: $DEST_BRANCH"
