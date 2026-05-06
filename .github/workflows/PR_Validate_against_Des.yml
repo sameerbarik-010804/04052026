@@ -72,7 +72,6 @@ jobs:
             --jwt-key-file server.key \
             --username "$SF_USERNAME" \
             --instance-url "$SF_INSTANCE_URL" \
-            --alias targetOrg \
             --set-default
 
       - name: Check if Package Manifest Exists
@@ -129,14 +128,17 @@ jobs:
       - name: Validate Deployment against Target Org
         shell: bash
         run: |
-          sf project deploy validate \
-            --target-org targetOrg \
-            --manifest "${{ steps.prepare_manifest.outputs.manifest_path }}" \
-            --test-level "${{ steps.prepare_manifest.outputs.test_level }}" \
-            $( if [[ "${{ steps.prepare_manifest.outputs.test_level }}" == "RunSpecifiedTests" ]]; then echo "--tests '${{ steps.prepare_manifest.outputs.test_classes }}'"; fi ) \
-            --wait 60 \
-            --ignore-warnings \
-            --json > deploy-result.json
+          TEST_LEVEL="${{ steps.prepare_manifest.outputs.test_level }}"
+          TEST_CLASSES="${{ steps.prepare_manifest.outputs.test_classes }}"
+          MANIFEST_PATH="${{ steps.prepare_manifest.outputs.manifest_path }}"
+
+          CMD="sf project deploy validate --target-org \"$SF_USERNAME\" --manifest \"$MANIFEST_PATH\" --test-level \"$TEST_LEVEL\" --wait 60 --ignore-warnings --json > deploy-result.json"
+
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" ]]; then
+            CMD+=" --tests \"$TEST_CLASSES\""
+          fi
+
+          eval $CMD
 
           cat deploy-result.json
 
