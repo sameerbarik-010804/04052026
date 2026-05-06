@@ -41,19 +41,23 @@ jobs:
           case "$DEST_BRANCH" in
             SIT)
               echo "SF_USERNAME=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.SIT_INSTANCE_URL }}" >> $GITHUB_ENV
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_ENV
               ;;
             QA)
               echo "SF_USERNAME=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.QA_INSTANCE_URL }}" >> $GITHUB_ENV
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> $GITHUB_ENV
               ;;
             UAT)
               echo "SF_USERNAME=${{ secrets.UAT_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.UAT_INSTANCE_URL }}" >> $GITHUB_ENV
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.PROD_INSTANCE_URL }}" >> $GITHUB_ENV
               ;;
             main)
-              echo "SF_USERNAME=${{ secrets.PROD_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.PROD_INSTANCE_URL }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.QA_USERNAME }}" >> $GITHUB_ENV
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> $GITHUB_ENV
               ;;
             *)
               echo "Invalid target branch: $DEST_BRANCH"
@@ -64,7 +68,7 @@ jobs:
       - name: Authenticate Salesforce Using JWT
         run: |
           sf org login jwt \
-            --client-id "${{ secrets.SF_CLIENT_ID }}" \
+            --client-id "$SF_CLIENT_ID" \
             --jwt-key-file server.key \
             --username "$SF_USERNAME" \
             --instance-url "$SF_INSTANCE_URL" \
