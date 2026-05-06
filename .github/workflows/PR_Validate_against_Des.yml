@@ -115,7 +115,11 @@ jobs:
           fi
 
           if [[ -f "$TEST_CLASS_FILE" ]]; then
-            TEST_CLASSES=$(paste -sd "," "$TEST_CLASS_FILE")
+            TEST_CLASSES=$(<"$TEST_CLASS_FILE")
+            # Trim leading/trailing whitespace and newlines
+            TEST_CLASSES="${TEST_CLASSES#"${TEST_CLASSES%%[![:space:]]*}"}"
+            TEST_CLASSES="${TEST_CLASSES%"${TEST_CLASSES##*[![:space:]]}"}"
+
             echo "Using test classes: $TEST_CLASSES"
             echo "test_classes=$TEST_CLASSES" >> "$GITHUB_OUTPUT"
             echo "test_level=RunSpecifiedTests" >> "$GITHUB_OUTPUT"
@@ -133,14 +137,31 @@ jobs:
           MANIFEST_PATH: ${{ steps.prepare_manifest.outputs.manifest_path }}
           SF_USERNAME: ${{ env.SF_USERNAME }}
         run: |
-          FORMATTED_TEST_CLASSES="${TEST_CLASSES// /,}"
+          # Function to parse space-separated TEST_CLASSES and add multiple --tests flags
+          build_tests_args() {
+            local args=()
+            local IFS=' '
+            # Read each test class, accounting for quoted names with spaces
+            read -ra tests_array <<< "$TEST_CLASSES"
+            for test_name in "${tests_array[@]}"; do
+              # If test name contains spaces, wrap in double quotes
+              if [[ "$test_name" =~ \  ]]; then
+                args+=(--tests "\"$test_name\"")
+              else
+                args+=(--tests "$test_name")
+              fi
+            done
+            echo "${args[@]}"
+          }
 
           CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings --json)
-          
-          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$FORMATTED_TEST_CLASSES" ]]; then
-            CMD+=(--tests "$FORMATTED_TEST_CLASSES")
+
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
+            # Append multiple --tests flags correctly
+            TEST_FLAGS=($(build_tests_args))
+            CMD+=("${TEST_FLAGS[@]}")
           fi
-          
+
           "${CMD[@]}" > deploy-result.json
           cat deploy-result.json
 
