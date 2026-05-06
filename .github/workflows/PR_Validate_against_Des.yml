@@ -24,10 +24,9 @@ jobs:
           sf --version
           echo "y" | sf plugins install sfdx-git-delta
 
-      - name: Create JWT Key File
+      - name: Generate JWT Key File
         run: |
-          echo "${{ secrets.SERVER_KEY }}" > server.key
-          chmod 600 server.key
+          echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key && chmod 600 server.key
 
       - name: Set Source and Destination Branch
         shell: bash
