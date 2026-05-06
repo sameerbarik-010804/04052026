@@ -1,4 +1,4 @@
-name: EMAMI Deployment Pipeline
+name: EMAMI Deployment Pipeline Test
 
 on:
   workflow_dispatch:
