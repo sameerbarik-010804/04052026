@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  validate:
+  Pre_validation_job:
     runs-on: ubuntu-latest
 
     steps:
