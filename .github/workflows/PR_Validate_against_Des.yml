@@ -116,30 +116,34 @@ jobs:
 
           if [[ -f "$TEST_CLASS_FILE" ]]; then
             TEST_CLASSES=$(paste -sd "," "$TEST_CLASS_FILE")
+            # If test class file is empty, fallback to explicit test classes
+            if [[ -z "$TEST_CLASSES" ]]; then
+              TEST_CLASSES="AccountServiceTest,AccountServices_Test"
+            fi
             echo "Using test classes: $TEST_CLASSES"
             echo "test_classes=$TEST_CLASSES" >> "$GITHUB_OUTPUT"
             echo "test_level=RunSpecifiedTests" >> "$GITHUB_OUTPUT"
           else
-            echo "Test class file not found, defaulting to RunLocalTests"
-            echo "test_classes=" >> "$GITHUB_OUTPUT"
-            echo "test_level=RunLocalTests" >> "$GITHUB_OUTPUT"
+            echo "Test class file not found, defaulting to RunSpecifiedTests with specified classes"
+            echo "test_classes=AccountServiceTest,AccountServices_Test" >> "$GITHUB_OUTPUT"
+            echo "test_level=RunSpecifiedTests" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate Deployment against Target Org
         shell: bash
+        env:
+          TEST_LEVEL: ${{ steps.prepare_manifest.outputs.test_level }}
+          TEST_CLASSES: ${{ steps.prepare_manifest.outputs.test_classes }}
+          MANIFEST_PATH: ${{ steps.prepare_manifest.outputs.manifest_path }}
+          SF_USERNAME: ${{ env.SF_USERNAME }}
         run: |
-          TEST_LEVEL="${{ steps.prepare_manifest.outputs.test_level }}"
-          TEST_CLASSES="${{ steps.prepare_manifest.outputs.test_classes }}"
-          MANIFEST_PATH="${{ steps.prepare_manifest.outputs.manifest_path }}"
-
-          CMD="sf project deploy validate --target-org \"$SF_USERNAME\" --manifest \"$MANIFEST_PATH\" --test-level \"$TEST_LEVEL\" --wait 60 --ignore-warnings --json > deploy-result.json"
-
-          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" ]]; then
-            CMD+=" --tests \"$TEST_CLASSES\""
+          CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings --json)
+          
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
+            CMD+=(--tests "$TEST_CLASSES")
           fi
-
-          eval $CMD
-
+          
+          "${CMD[@]}" > deploy-result.json
           cat deploy-result.json
 
       - name: Check Validation Result
