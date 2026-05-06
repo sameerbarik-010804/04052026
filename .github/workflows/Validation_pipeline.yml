@@ -1,0 +1,140 @@
+name: Salesforce Deployment Validation (Multi-org)
+
+on:
+  workflow_dispatch:
+    inputs:
+      BRANCH_NAME:
+        description: 'Branch name to validate / deploy'
+        required: true
+        default: ''
+      TEST_LEVEL:
+        description: 'Test class run level'
+        required: true
+        default: 'RunLocalTests'
+        type: choice
+        options:
+          - RunSpecifiedTests
+          - RunLocalTests
+          - RunAllTestsInOrg
+      ORG_ENV:
+        description: 'Salesforce Org Environment (e.g., SIT, QA, PROD)'
+        required: true
+        default: 'SIT'
+
+jobs:
+  deploy-validate:
+    runs-on: ubuntu-latest
+
+    env:
+      SF_LOGIN_URL_TEST: https://test.salesforce.com
+      SF_LOGIN_URL_PROD: https://login.salesforce.com
+
+    steps:
+    - name: Validate input parameters
+      run: |
+        if [ "${{ github.event.inputs.BRANCH_NAME }}" = "" ]; then
+          echo "Error: Branch name is required."
+          exit 1
+        fi
+        if [ "${{ github.event.inputs.ORG_ENV }}" = "" ]; then
+          echo "Error: ORG_ENV is required."
+          exit 1
+        fi
+
+    - name: Checkout repository branch
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.inputs.BRANCH_NAME }}
+
+    - name: Verify manifest and test class files exist
+      id: check_files
+      run: |
+        SHORT_BRANCH_NAME="${{ github.event.inputs.BRANCH_NAME }}"
+        MANIFEST_PATH="manifest/${SHORT_BRANCH_NAME}_package.xml"
+        TEST_CLASS_PATH="manifest/${SHORT_BRANCH_NAME}_test_class.txt"
+
+        echo "Checking manifest: $MANIFEST_PATH"
+        if [ ! -f "$MANIFEST_PATH" ]; then
+          echo "ERROR: Manifest file not found: $MANIFEST_PATH"
+          exit 1
+        fi
+
+        TEST_LEVEL="${{ github.event.inputs.TEST_LEVEL }}"
+        if [ "$TEST_LEVEL" = "RunSpecifiedTests" ]; then
+          echo "Test level requires test class file: Checking $TEST_CLASS_PATH"
+          if [ ! -f "$TEST_CLASS_PATH" ]; then
+            echo "ERROR: Test class file required but not found: $TEST_CLASS_PATH"
+            exit 1
+          fi
+          # Convert test class file lines into comma-separated list
+          TEST_CLASSES=$(awk '{printf "%s%s", separator, $0; separator=","}' "$TEST_CLASS_PATH")
+          echo "Found test classes: $TEST_CLASSES"
+          echo "::set-output name=test_classes::$TEST_CLASSES"
+        fi
+        echo "::set-output name=manifest_path::$MANIFEST_PATH"
+      shell: bash
+
+    - name: Install Salesforce CLI (sf)
+      uses: sfdx-actions/setup-sfdx@v1
+      with:
+        version: latest
+
+    - name: Prepare Salesforce JWT Key File
+      run: |
+        echo "${{ secrets['SF_JWT_KEY_' + github.event.inputs.ORG_ENV] }}" > server.key
+        chmod 600 server.key
+
+    - name: Authenticate to Salesforce Org using JWT
+      env:
+        SF_CONSUMER_KEY: ${{ secrets['SF_CLIENT_ID_' + github.event.inputs.ORG_ENV] }}
+        SF_USERNAME: ${{ secrets['SF_USERNAME_' + github.event.inputs.ORG_ENV] }}
+      run: |
+        set -e
+        ALIAS=${{ github.event.inputs.ORG_ENV }}
+        LOGIN_URL="${{ env.SF_LOGIN_URL_TEST }}"
+        # Use production login for PROD org
+        if [ "$ALIAS" = "PROD" ] || [ "$ALIAS" = "PRODUCTION" ]; then
+          LOGIN_URL="${{ env.SF_LOGIN_URL_PROD }}"
+        fi
+
+        echo "Logging out existing sessions for alias $ALIAS..."
+        sf org logout --target-org "$ALIAS" --no-prompt || true
+        sf org logout --all --no-prompt || true
+
+        echo "Logging in to org $ALIAS ($LOGIN_URL) using JWT"
+        sf org login jwt \
+          --client-id "$SF_CONSUMER_KEY" \
+          --jwt-key-file server.key \
+          --username "$SF_USERNAME" \
+          --instance-url "$LOGIN_URL" \
+          --alias "$ALIAS" \
+          --set-default
+
+        sf org display --target-org "$ALIAS"
+
+    - name: Validate deployment
+      env:
+        ALIAS: ${{ github.event.inputs.ORG_ENV }}
+        TEST_LEVEL: ${{ github.event.inputs.TEST_LEVEL }}
+      run: |
+        MANIFEST_PATH="${{ steps.check_files.outputs.manifest_path }}"
+        if [ "$TEST_LEVEL" == "RunSpecifiedTests" ]; then
+          TEST_CLASSES="${{ steps.check_files.outputs.test_classes }}"
+          echo "Validating deployment to org $ALIAS with test classes: $TEST_CLASSES"
+          sf project deploy validate \
+            --manifest "$MANIFEST_PATH" \
+            --target-org "$ALIAS" \
+            --test-level RunSpecifiedTests \
+            --tests "$TEST_CLASSES" \
+            --wait 30
+        else
+          echo "Validating deployment to org $ALIAS with test level: $TEST_LEVEL"
+          sf project deploy validate \
+            --manifest "$MANIFEST_PATH" \
+            --target-org "$ALIAS" \
+            --test-level "$TEST_LEVEL" \
+            --wait 30
+        fi
+
+    - name: Clean up
+      run: rm -f server.key
