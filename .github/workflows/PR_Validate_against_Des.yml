@@ -34,7 +34,7 @@ jobs:
         run: |
           echo "SOURCE_BRANCH=${{ github.head_ref }}" >> "$GITHUB_ENV"
           echo "DEST_BRANCH=${{ github.base_ref }}" >> "$GITHUB_ENV"
-
+      
       - name: Select Salesforce Org Based on Destination Branch
         shell: bash
         run: |
@@ -115,18 +115,18 @@ jobs:
           fi
 
           if [[ -f "$TEST_CLASS_FILE" ]]; then
-            TEST_CLASSES=$(paste -sd "," "$TEST_CLASS_FILE")
-            # If test class file is empty, fallback to explicit test classes
-            if [[ -z "$TEST_CLASSES" ]]; then
-              TEST_CLASSES="AccountServiceTest,AccountServices_Test"
-            fi
+            TEST_CLASSES=$(<"$TEST_CLASS_FILE")
+            # Trim leading/trailing whitespace and newlines
+            TEST_CLASSES="${TEST_CLASSES#"${TEST_CLASSES%%[![:space:]]*}"}"
+            TEST_CLASSES="${TEST_CLASSES%"${TEST_CLASSES##*[![:space:]]}"}"
+
             echo "Using test classes: $TEST_CLASSES"
             echo "test_classes=$TEST_CLASSES" >> "$GITHUB_OUTPUT"
             echo "test_level=RunSpecifiedTests" >> "$GITHUB_OUTPUT"
           else
-            echo "Test class file not found, defaulting to RunSpecifiedTests with specified classes"
-            echo "test_classes=AccountServiceTest,AccountServices_Test" >> "$GITHUB_OUTPUT"
-            echo "test_level=RunSpecifiedTests" >> "$GITHUB_OUTPUT"
+            echo "Test class file not found, defaulting to RunLocalTests"
+            echo "test_classes=" >> "$GITHUB_OUTPUT"
+            echo "test_level=RunLocalTests" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate Deployment against Target Org
@@ -137,12 +137,31 @@ jobs:
           MANIFEST_PATH: ${{ steps.prepare_manifest.outputs.manifest_path }}
           SF_USERNAME: ${{ env.SF_USERNAME }}
         run: |
+          # Function to parse space-separated TEST_CLASSES and add multiple --tests flags
+          build_tests_args() {
+            local args=()
+            local IFS=' '
+            # Read each test class, accounting for quoted names with spaces
+            read -ra tests_array <<< "$TEST_CLASSES"
+            for test_name in "${tests_array[@]}"; do
+              # If test name contains spaces, wrap in double quotes
+              if [[ "$test_name" =~ \  ]]; then
+                args+=(--tests "\"$test_name\"")
+              else
+                args+=(--tests "$test_name")
+              fi
+            done
+            echo "${args[@]}"
+          }
+
           CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings --json)
-          
+
           if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
-            CMD+=(--tests "$TEST_CLASSES")
+            # Append multiple --tests flags correctly
+            TEST_FLAGS=($(build_tests_args))
+            CMD+=("${TEST_FLAGS[@]}")
           fi
-          
+
           "${CMD[@]}" > deploy-result.json
           cat deploy-result.json
 
