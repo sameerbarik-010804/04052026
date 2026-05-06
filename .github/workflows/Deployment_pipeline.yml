@@ -52,7 +52,7 @@ jobs:
     if: >
       (github.event_name == 'push' &&
        (
-         (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT')
+         (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
          (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
          (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
          ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD') ||
