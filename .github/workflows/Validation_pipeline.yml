@@ -163,10 +163,10 @@ jobs:
           if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
             TESTS="${{ steps.prepare_tests.outputs.test_classes }}"
             echo "Deploying with RunSpecifiedTests: $TESTS"
-            sf project deploy --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 10
+            sf project deploy start --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 10
           else
             echo "Deploying with test level: ${{ github.event.inputs.testlevel }}"
-            sf project deploy --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 10
+            sf project deploy start --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 10
           fi
 
       - name: Cleanup
