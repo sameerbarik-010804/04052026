@@ -26,37 +26,38 @@ jobs:
 
       - name: Generate JWT Key File
         run: |
-          echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key && chmod 600 server.key
+          echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key
+          chmod 600 server.key
 
       - name: Set Source and Destination Branch
         shell: bash
         run: |
-          echo "SOURCE_BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
-          echo "DEST_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
+          echo "SOURCE_BRANCH=${{ github.head_ref }}" >> "$GITHUB_ENV"
+          echo "DEST_BRANCH=${{ github.base_ref }}" >> "$GITHUB_ENV"
 
       - name: Select Salesforce Org Based on Destination Branch
         shell: bash
         run: |
           case "$DEST_BRANCH" in
             SIT)
-              echo "SF_USERNAME=${{ secrets.SIT_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_SIT }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.SIT_USERNAME }}" >> "$GITHUB_ENV"
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> "$GITHUB_ENV"
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_SIT }}" >> "$GITHUB_ENV"
               ;;
             QA)
-              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> "$GITHUB_ENV"
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> "$GITHUB_ENV"
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> "$GITHUB_ENV"
               ;;
             UAT)
-              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_UAT_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_UAT_USERNAME }}" >> "$GITHUB_ENV"
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> "$GITHUB_ENV"
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> "$GITHUB_ENV"
               ;;
             main)
-              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> $GITHUB_ENV
-              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> $GITHUB_ENV
-              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_ENV
+              echo "SF_USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> "$GITHUB_ENV"
+              echo "SF_INSTANCE_URL=${{ secrets.SANDBOX_URL }}" >> "$GITHUB_ENV"
+              echo "SF_CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> "$GITHUB_ENV"
               ;;
             *)
               echo "Invalid target branch: $DEST_BRANCH"
@@ -80,10 +81,10 @@ jobs:
         run: |
           PKG_MANIFEST="${GITHUB_WORKSPACE}/manifest/${SOURCE_BRANCH}_package.xml"
           if [[ -f "$PKG_MANIFEST" ]]; then
-            echo "package_exists=true" >> $GITHUB_OUTPUT
-            echo "package_path=$PKG_MANIFEST" >> $GITHUB_OUTPUT
+            echo "package_exists=true" >> "$GITHUB_OUTPUT"
+            echo "package_path=$PKG_MANIFEST" >> "$GITHUB_OUTPUT"
           else
-            echo "package_exists=false" >> $GITHUB_OUTPUT
+            echo "package_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Prepare Validation Manifest and Test Classes
@@ -92,7 +93,7 @@ jobs:
         run: |
           if [[ "${{ steps.check_package.outputs.package_exists }}" == "true" ]]; then
             echo "Using package manifest from ${{ steps.check_package.outputs.package_path }}"
-            echo "manifest_path=${{ steps.check_package.outputs.package_path }}" >> $GITHUB_OUTPUT
+            echo "manifest_path=${{ steps.check_package.outputs.package_path }}" >> "$GITHUB_OUTPUT"
 
             TEST_CLASS_FILE="${GITHUB_WORKSPACE}/manifest/${SOURCE_BRANCH}_TestClass.txt"
           else
@@ -109,7 +110,7 @@ jobs:
               --generate-delta
 
             DELTA_MANIFEST="${GITHUB_WORKSPACE}/delta/package/package.xml"
-            echo "manifest_path=$DELTA_MANIFEST" >> $GITHUB_OUTPUT
+            echo "manifest_path=$DELTA_MANIFEST" >> "$GITHUB_OUTPUT"
 
             TEST_CLASS_FILE="${GITHUB_WORKSPACE}/delta/package/testclass.txt"
           fi
@@ -117,12 +118,12 @@ jobs:
           if [[ -f "$TEST_CLASS_FILE" ]]; then
             TEST_CLASSES=$(paste -sd "," "$TEST_CLASS_FILE")
             echo "Using test classes: $TEST_CLASSES"
-            echo "test_classes=$TEST_CLASSES" >> $GITHUB_OUTPUT
-            echo "test_level=RunSpecifiedTests" >> $GITHUB_OUTPUT
+            echo "test_classes=$TEST_CLASSES" >> "$GITHUB_OUTPUT"
+            echo "test_level=RunSpecifiedTests" >> "$GITHUB_OUTPUT"
           else
             echo "Test class file not found, defaulting to RunLocalTests"
-            echo "test_classes=" >> $GITHUB_OUTPUT
-            echo "test_level=RunLocalTests" >> $GITHUB_OUTPUT
+            echo "test_classes=" >> "$GITHUB_OUTPUT"
+            echo "test_level=RunLocalTests" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate Deployment against Target Org
@@ -159,3 +160,7 @@ jobs:
             exit 1
           fi
           echo "Validation passed successfully."
+
+      - name: Remove JWT Key File
+        if: always()
+        run: rm -f server.key
