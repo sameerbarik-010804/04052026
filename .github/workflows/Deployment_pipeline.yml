@@ -5,11 +5,11 @@ on:
     inputs:
       Feature_Branch:
         type: string
-        description: Please Enter Branch To Deploy in Environment.
+        description: Branch to deploy (also used as package name)
         required: true
       environment:
         type: choice
-        description: Please Select The Deployment Environment.
+        description: Deployment environment
         options:
           - SIT
           - QA
@@ -19,7 +19,7 @@ on:
         required: true
       testlevel:
         type: choice
-        description: Select Test class Run Type
+        description: Test class run level
         options:
           - NoTestRun
           - RunLocalTests
@@ -29,7 +29,7 @@ on:
         required: true
       specifiedclass:
         type: string
-        description: Please Enter Test Class Names (Space separated)
+        description: Test class names (comma separated, required if RunSpecifiedTests)
         required: false
 
   push:
@@ -62,17 +62,17 @@ jobs:
       (github.event_name == 'workflow_dispatch')
 
     steps:
-      - name: Validate branch and environment (manual run only)
+      - name: Validate branch and environment (manual runs only)
         if: github.event_name == 'workflow_dispatch'
+        shell: bash
         run: |
           echo "Checking branch-environment consistency..."
 
           FEATURE_BRANCH="${{ github.event.inputs.Feature_Branch }}"
           ENVIRONMENT="${{ github.event.inputs.environment }}"
-
           case "$FEATURE_BRANCH:$ENVIRONMENT" in
-            SIT:SIT|QA:QA|UAT:UAT|main:PROD||main:QA)
-              echo "Branch and environment match."
+            SIT:SIT|QA:QA|UAT:UAT|main:PROD|main:QA)
+              echo "Branch and environment match. Proceeding..."
               ;;
             *)
               echo "ERROR: Branch '$FEATURE_BRANCH' cannot deploy to environment '$ENVIRONMENT'"
@@ -81,6 +81,7 @@ jobs:
           esac
 
       - name: Set environment variables
+        shell: bash
         run: |
           # Set FEATURE_BRANCH from input or fallback to current branch name
           if [ -n "${{ github.event.inputs.Feature_Branch }}" ]; then
@@ -94,22 +95,20 @@ jobs:
             echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
           else
             case "${GITHUB_REF##*/}" in
-              Dev) echo "ENVIRONMENT=EMAMI QA" >> $GITHUB_ENV ;;
-              qaglobal) echo "ENVIRONMENT=EMAMI QAGlobal" >> $GITHUB_ENV ;;
-              uat) echo "ENVIRONMENT=EMAMI UAT" >> $GITHUB_ENV ;;
-              hotfix) echo "ENVIRONMENT=EMAMI HOTFIX" >> $GITHUB_ENV ;;
-              *) echo "ENVIRONMENT=EMAMI QA" >> $GITHUB_ENV ;;
+              SIT) echo "ENVIRONMENT=SIT" >> $GITHUB_ENV ;;
+              QA) echo "ENVIRONMENT=QA" >> $GITHUB_ENV ;;
+              UAT) echo "ENVIRONMENT=UAT" >> $GITHUB_ENV ;;
+              main) echo "ENVIRONMENT=PROD" >> $GITHUB_ENV ;;
+              *) echo "ENVIRONMENT=QA" >> $GITHUB_ENV ;; # default fallback
             esac
           fi
 
-          # Set TEST_LEVEL from input or default
           if [ -n "${{ github.event.inputs.testlevel }}" ]; then
             echo "TEST_LEVEL=${{ github.event.inputs.testlevel }}" >> $GITHUB_ENV
           else
             echo "TEST_LEVEL=RunSpecifiedTests" >> $GITHUB_ENV
           fi
 
-          # SPECIFIED_CLASS (optional)
           echo "SPECIFIED_CLASS='${{ github.event.inputs.specifiedclass || '' }}'" >> $GITHUB_ENV
 
       - name: Checkout source
@@ -130,30 +129,31 @@ jobs:
 
       - name: Set org credentials and login URL based on environment
         id: set-org
+        shell: bash
         run: |
           case "${{ env.ENVIRONMENT }}" in
-            "EMAMI QA")
-              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }}" >> $GITHUB_OUTPUT
-              echo "USERNAME=${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }}" >> $GITHUB_OUTPUT
+            SIT)
+              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_SIT }}" >> $GITHUB_OUTPUT
+              echo "USERNAME=${{ secrets.SFDX_AUTH_SIT_USERNAME }}" >> $GITHUB_OUTPUT
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_TEST }}" >> $GITHUB_OUTPUT
               ;;
-            "EMAMI QAGlobal")
-              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QAGLOBAL }}" >> $GITHUB_OUTPUT
-              echo "USERNAME=${{ secrets.SFDX_AUTH_EMAMI_QAGLOBAL_USERNAME }}" >> $GITHUB_OUTPUT
+            QA)
+              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}" >> $GITHUB_OUTPUT
+              echo "USERNAME=${{ secrets.SFDX_AUTH_QA_USERNAME }}" >> $GITHUB_OUTPUT
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_TEST }}" >> $GITHUB_OUTPUT
               ;;
-            "EMAMI UAT")
-              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_UAT }}" >> $GITHUB_OUTPUT
-              echo "USERNAME=${{ secrets.SFDX_AUTH_EMAMI_UAT_USERNAME }}" >> $GITHUB_OUTPUT
+            UAT)
+              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}" >> $GITHUB_OUTPUT
+              echo "USERNAME=${{ secrets.SFDX_AUTH_UAT_USERNAME }}" >> $GITHUB_OUTPUT
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_PROD }}" >> $GITHUB_OUTPUT
               ;;
-            "EMAMI HOTFIX")
-              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_HOTFIX }}" >> $GITHUB_OUTPUT
-              echo "USERNAME=${{ secrets.SFDX_AUTH_EMAMI_HOTFIX_USERNAME }}" >> $GITHUB_OUTPUT
+            main)
+              echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_PROD }}" >> $GITHUB_OUTPUT
+              echo "USERNAME=${{ secrets.SFDX_AUTH_PROD_USERNAME }}" >> $GITHUB_OUTPUT
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_PROD }}" >> $GITHUB_OUTPUT
               ;;
             *)
-              echo "Unknown environment ${{ env.ENVIRONMENT }}"
+              echo "Error: Unknown environment ${{ env.ENVIRONMENT }}"
               exit 1
               ;;
           esac
@@ -161,14 +161,12 @@ jobs:
       - name: Authenticate to Salesforce Org
         run: |
           sf org logout --all --no-prompt || true
-
           sf auth jwt grant \
             --client-id "${{ steps.set-org.outputs.CLIENT_ID }}" \
             --jwt-key-file server.key \
             --username "${{ steps.set-org.outputs.USERNAME }}" \
             --instance-url "${{ steps.set-org.outputs.LOGIN_URL }}" \
             --set-default
-
           sf org display --target-org "${{ steps.set-org.outputs.USERNAME }}"
 
       - name: Run Salesforce Code Analyzer
@@ -207,7 +205,7 @@ jobs:
             if [[ -z "${{ env.SPECIFIED_CLASS }}" || "${{ env.SPECIFIED_CLASS }}" == "''" ]]; then
               TEST_CLASS_FILE="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_testclass.txt"
               if [[ ! -f "$TEST_CLASS_FILE" ]]; then
-                echo "ERROR: Test class file $TEST_CLASS_FILE not found and no specifiedclass input provided."
+                echo "ERROR: Test class file $TEST_CLASS_FILE not found and no specified class input provided."
                 exit 1
               fi
               TEST_CLASSES=$(paste -sd "," "$TEST_CLASS_FILE")
