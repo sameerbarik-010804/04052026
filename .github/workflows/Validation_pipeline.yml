@@ -21,7 +21,6 @@ on:
         type: choice
         description: Select Test class Run Type.
         options:
-          - NoTestRun
           - RunLocalTests
           - RunSpecifiedTests
           - RunAllTestsInOrg

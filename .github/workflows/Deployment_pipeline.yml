@@ -48,38 +48,7 @@ jobs:
       SF_LOGIN_URL_PROD: https://login.salesforce.com
       SF_ALIAS: emamiOrg
 
-    # Run job only if branch matches environment, or on manual trigger
-    if: >
-      (github.event_name == 'push' &&
-       (
-         (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
-         (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
-         (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
-         (github.ref == 'refs/heads/main' && github.event.inputs.environment == 'PROD')||
-         (github.ref == 'refs/heads/main' && github.event.inputs.environment == 'QA')
-       )
-      ) ||
-      (github.event_name == 'workflow_dispatch')
-
     steps:
-      - name: Validate branch and environment (manual runs only)
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          echo "Checking branch-environment consistency..."
-
-          FEATURE_BRANCH="${{ github.event.inputs.Feature_Branch }}"
-          ENVIRONMENT="${{ github.event.inputs.environment }}"
-          case "$FEATURE_BRANCH:$ENVIRONMENT" in
-            SIT:SIT|QA:QA|UAT:UAT|main:PROD|main:QA)
-              echo "Branch and environment match. Proceeding..."
-              ;;
-            *)
-              echo "ERROR: Branch '$FEATURE_BRANCH' cannot deploy to environment '$ENVIRONMENT'"
-              exit 1
-              ;;
-          esac
-
       - name: Set environment variables
         shell: bash
         run: |
@@ -147,7 +116,7 @@ jobs:
               echo "USERNAME=${{ secrets.SFDX_AUTH_UAT_USERNAME }}" >> $GITHUB_OUTPUT
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_PROD }}" >> $GITHUB_OUTPUT
               ;;
-            main)
+            PROD)
               echo "CLIENT_ID=${{ secrets.SALESFORCE_CONSUMER_KEY_PROD }}" >> $GITHUB_OUTPUT
               echo "USERNAME=${{ secrets.SFDX_AUTH_PROD_USERNAME }}" >> $GITHUB_OUTPUT
               echo "LOGIN_URL=${{ env.SF_LOGIN_URL_PROD }}" >> $GITHUB_OUTPUT
