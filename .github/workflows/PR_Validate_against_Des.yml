@@ -137,39 +137,23 @@ jobs:
           MANIFEST_PATH: ${{ steps.prepare_manifest.outputs.manifest_path }}
           SF_USERNAME: ${{ env.SF_USERNAME }}
         run: |
-          echo "DEBUG VARIABLES:"
-          echo "TEST_LEVEL=$TEST_LEVEL"
-          echo "TEST_CLASSES=$TEST_CLASSES"
-          echo "MANIFEST_PATH=$MANIFEST_PATH"
-          echo "SF_USERNAME=$SF_USERNAME"
-
+          # Split space-separated string into array (handles multiple test names)
           read -ra tests_array <<< "$TEST_CLASSES"
 
-          echo "Test classes to run:"
-          for t in "${tests_array[@]}"; do echo "  $t"; done
-
-          CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings --json)
+          CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings)
 
           if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && ${#tests_array[@]} -gt 0 ]]; then
+            CMD+=(--tests)
             for test in "${tests_array[@]}"; do
-              CMD+=(--tests "$test")
+              CMD+=("$test")
             done
           fi
 
-          echo "Running deployment validation command:"
-          echo "${CMD[@]}"
+          CMD+=(--json)
 
-          set -x
-          "${CMD[@]}"
-          DEPLOY_EXIT_CODE=$?
-          set +x
-
-          echo "Deployment validation exit code: $DEPLOY_EXIT_CODE"
-
-          if [[ $DEPLOY_EXIT_CODE -ne 0 ]]; then
-            echo "Deployment validation failed."
-            exit $DEPLOY_EXIT_CODE
-          fi
+          echo "Running command: ${CMD[*]}"
+          "${CMD[@]}" > deploy-result.json
+          cat deploy-result.json
 
       - name: Check Validation Result
         shell: bash
