@@ -34,7 +34,7 @@ jobs:
         run: |
           echo "SOURCE_BRANCH=${{ github.head_ref }}" >> "$GITHUB_ENV"
           echo "DEST_BRANCH=${{ github.base_ref }}" >> "$GITHUB_ENV"
-
+      
       - name: Select Salesforce Org Based on Destination Branch
         shell: bash
         run: |
@@ -127,19 +127,21 @@ jobs:
 
       - name: Validate Deployment against Target Org
         shell: bash
+        env:
+          TEST_LEVEL: ${{ steps.prepare_manifest.outputs.test_level }}
+          TEST_CLASSES: ${{ steps.prepare_manifest.outputs.test_classes }}
+          MANIFEST_PATH: ${{ steps.prepare_manifest.outputs.manifest_path }}
+          SF_USERNAME: ${{ env.SF_USERNAME }}
         run: |
-          TEST_LEVEL="${{ steps.prepare_manifest.outputs.test_level }}"
-          TEST_CLASSES="${{ steps.prepare_manifest.outputs.test_classes }}"
-          MANIFEST_PATH="${{ steps.prepare_manifest.outputs.manifest_path }}"
+          FORMATTED_TEST_CLASSES="${TEST_CLASSES// /,}"
 
-          CMD="sf project deploy validate --target-org \"$SF_USERNAME\" --manifest \"$MANIFEST_PATH\" --test-level \"$TEST_LEVEL\" --wait 60 --ignore-warnings --json > deploy-result.json"
-
-          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" ]]; then
-            CMD+=" --tests \"$TEST_CLASSES\""
+          CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings --json)
+          
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$FORMATTED_TEST_CLASSES" ]]; then
+            CMD+=(--tests "$FORMATTED_TEST_CLASSES")
           fi
-
-          eval $CMD
-
+          
+          "${CMD[@]}" > deploy-result.json
           cat deploy-result.json
 
       - name: Check Validation Result
