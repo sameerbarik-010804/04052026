@@ -172,7 +172,7 @@ jobs:
         run: |
           if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
             if [[ -z "${{ env.SPECIFIED_CLASS }}" || "${{ env.SPECIFIED_CLASS }}" == "''" ]]; then
-              TEST_CLASS_FILE="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_testclass.txt"
+              TEST_CLASS_FILE="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_TestClass.txt"
               if [[ ! -f "$TEST_CLASS_FILE" ]]; then
                 echo "ERROR: Test class file $TEST_CLASS_FILE not found and no specified class input provided."
                 exit 1
