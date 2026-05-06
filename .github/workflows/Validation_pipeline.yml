@@ -1,137 +1,173 @@
-name: Salesforce Deploy and Validate
+name: EMAMI Validation Pipeline val
 
 on:
   workflow_dispatch:
     inputs:
-      BRANCH_NAME:
-        description: 'Branch to checkout and deploy'
+      Feature_Branch:
+        type: string
+        description: Please Enter Branch To validate in Environment.
         required: true
-        default: main
-      TEST_LEVEL:
-        description: 'Salesforce test level'
-        required: true
-        default: RunLocalTests
+      environment:
         type: choice
+        description: Please Select The Validation Environment.
         options:
-          - RunSpecifiedTests
+          - EMAMI QA
+          - EMAMI QAGlobal
+          - EMAMI UAT
+          - EMAMI HOTFIX
+        default: "EMAMI QA"
+        required: true
+      testlevel:
+        type: choice
+        description: Select Test class Run Type.
+        options:
+          - NoTestRun
           - RunLocalTests
+          - RunSpecifiedTests
           - RunAllTestsInOrg
+        default: "RunSpecifiedTests"
+        required: true
+      specifiedclass:
+        type: string
+        description: Please Enter Test Class Names (comma separated).
+        required: false
 
 jobs:
-  deploy:
+  Validation_Job:
     runs-on: ubuntu-latest
-
     env:
-      SF_ALIAS: targetOrg
-
+      # Map environment based on input choice - add mapping if needed here
+      SF_ENV_ALIAS: emamiOrg
+      SF_LOGIN_URL_TEST: https://test.salesforce.com
+      SF_LOGIN_URL_PROD: https://login.salesforce.com
     steps:
-    - name: Checkout branch
-      uses: actions/checkout@v3
-      with:
-        ref: ${{ github.event.inputs.BRANCH_NAME }}
+      - name: Checkout branch (Feature Branch)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.Feature_Branch }}
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '16'
+      - name: Install Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli@latest
+          sf --version
 
-    - name: Install Salesforce CLI
-      run: npm install sfdx-cli --global
+      - name: Install Salesforce Code Analyzer Plugin
+        run: sf plugins install @salesforce/sfdx-scanner@latest || echo "Plugin already installed"
 
-    - name: Install Java (required for PMD scanner)
-      run: sudo apt-get update && sudo apt-get install -y openjdk-11-jre-headless
+      - name: Generate JWT Key file
+        run: echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key && chmod 600 server.key
 
-    - name: Download and unzip PMD Salesforce ruleset
-      run: |
-        wget https://github.com/pmd/pmd/releases/download/pmd_releases/6.59.0/pmd-bin-6.59.0.zip
-        unzip -o pmd-bin-6.59.0.zip
-        echo "${PWD}/pmd-bin-6.59.0" > pmd_dir.txt
-
-    - name: Run Salesforce Scanner (PMD)
-      run: |
-        PMD_HOME=$(cat pmd_dir.txt)
-        $PMD_HOME/bin/run.sh pmd \
-          -d force-app/main/default/classes \
-          -R salesforce-best-practices \
-          -f text
-
-    - name: Prepare JWT key file
-      run: |
-        echo "${{ secrets.SF_JWT_KEY }}" > server.key
-        chmod 600 server.key
-
-    - name: Authenticate to Salesforce Org using JWT
-      env:
-        SF_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
-        SF_USERNAME: ${{ secrets.SF_USERNAME }}
-        SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL || 'https://login.salesforce.com' }}
-      run: |
-        sf --version
-
-        echo "Logging out any existing sessions..."
-        sf org logout --all --no-prompt || true
-
-        echo "Authenticating to Salesforce org..."
-        sf org login jwt \
-          --client-id $SF_CONSUMER_KEY \
-          --jwt-key-file server.key \
-          --username $SF_USERNAME \
-          --instance-url $SF_LOGIN_URL \
-          --alias $SF_ALIAS \
-          --set-default
-
-        sf org display --target-org $SF_ALIAS
-
-    - name: Validate deployment (Check Only)
-      run: |
-        TEST_LEVEL="${{ github.event.inputs.TEST_LEVEL }}"
-        MANIFEST_PATH="manifest/package.xml"
-        if [ "$TEST_LEVEL" = "RunSpecifiedTests" ]; then
-          echo "RunSpecifiedTests requires test classes file."
-          TEST_CLASSES_FILE="manifest/test_classes.txt"
-          if [ ! -f "$TEST_CLASSES_FILE" ]; then
-            echo "Error: test classes file '$TEST_CLASSES_FILE' not found."
-            exit 1
+      - name: Authorize to Salesforce org
+        run: |
+          # Determine login URL based on environment name
+          LOGIN_URL="${{ env.SF_LOGIN_URL_TEST }}"
+          if [[ "${{ github.event.inputs.environment }}" =~ ^EMAMI\s*(HOTFIX|UAT)$ ]]; then
+            # you can adjust logic as needed for prod/login URLs
+            LOGIN_URL="${{ env.SF_LOGIN_URL_PROD }}"
           fi
-          TEST_CLASSES=$(paste -sd "," "$TEST_CLASSES_FILE")
-          echo "Validating deployment with tests: $TEST_CLASSES"
-          sf project deploy validate \
-            --manifest "$MANIFEST_PATH" \
-            --target-org $SF_ALIAS \
-            --test-level RunSpecifiedTests \
-            --tests "$TEST_CLASSES" \
-            --wait 30
-        else
-          echo "Validating deployment with test level: $TEST_LEVEL"
-          sf project deploy validate \
-            --manifest "$MANIFEST_PATH" \
-            --target-org $SF_ALIAS \
-            --test-level $TEST_LEVEL \
-            --wait 30
-        fi
 
-    - name: Deploy to Salesforce Org
-      run: |
-        TEST_LEVEL="${{ github.event.inputs.TEST_LEVEL }}"
-        MANIFEST_PATH="manifest/package.xml"
-        if [ "$TEST_LEVEL" = "RunSpecifiedTests" ]; then
-          TEST_CLASSES_FILE="manifest/test_classes.txt"
-          TEST_CLASSES=$(paste -sd "," "$TEST_CLASSES_FILE")
-          echo "Deploying with tests: $TEST_CLASSES"
-          sf project deploy \
-            --manifest "$MANIFEST_PATH" \
-            --target-org $SF_ALIAS \
-            --test-level RunSpecifiedTests \
-            --tests "$TEST_CLASSES" \
-            --wait 10
-        else
-          echo "Deploying with test level: $TEST_LEVEL"
-          sf project deploy \
-            --manifest "$MANIFEST_PATH" \
-            --target-org $SF_ALIAS \
-            --test-level $TEST_LEVEL \
-            --wait 10
-        fi
+          # Select appropriate secrets based on environment input
+          case "${{ github.event.inputs.environment }}" in
+            "EMAMI QA")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }}"
+              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }}"
+              ;;
+            "EMAMI QAGlobal")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QAGLOBAL }}"
+              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_QAGLOBAL_USERNAME }}"
+              ;;
+            "EMAMI UAT")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_UAT }}"
+              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_UAT_USERNAME }}"
+              ;;
+            "EMAMI HOTFIX")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_HOTFIX }}"
+              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_HOTFIX_USERNAME }}"
+              ;;
+            *)
+              echo "Unknown environment: ${{ github.event.inputs.environment }}"
+              exit 1
+              ;;
+          esac
 
-    - name: Cleanup JWT key file
-      run: rm -f server.key
+          echo "Logging out previous sessions..."
+          sf org logout --all --no-prompt || true
+
+          echo "Authorizing to Salesforce org (${USERNAME}) with client id ${CLIENT_ID} and login url ${LOGIN_URL}..."
+          sf org login jwt --client-id "${CLIENT_ID}" --jwt-key-file server.key --username "${USERNAME}" --instance-url "${LOGIN_URL}" --alias "${{ env.SF_ENV_ALIAS }}" --set-default
+
+          sf org display --target-org "${{ env.SF_ENV_ALIAS }}"
+
+      - name: Run Salesforce Code Analyzer
+        id: run-code-analyzer
+        uses: forcedotcom/run-code-analyzer@v1
+        with:
+          run-command: run
+          run-arguments: --normalize-severity --target . --outfile results.json --json --verbose
+          results-artifact-name: salesforce-code-analyzer-results
+
+      - name: Display Salesforce Scanner Report Summary
+        run: |
+          echo "| Rule Id | Severity | File | Line | Message |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|------|------|---------|" >> $GITHUB_STEP_SUMMARY
+          jq -r '.[] | "|"+(.ruleId // "n/a")+"|"+(.severity // "n/a")+"|"+(.file // "n/a")+"|"+((.line|tostring) // "n/a")+"|"+(.message // "n/a")+"|"' results.json >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if critical errors found in scanner output
+        if: |
+          steps.run-code-analyzer.outputs.exit-code > 0 ||
+          steps.run-code-analyzer.outputs.num-sev1-violations > 0 ||
+          steps.run-code-analyzer.outputs.num-violations > 10
+        run: exit 1
+
+      - name: Determine test classes for RunSpecifiedTests, if needed
+        id: prepare_tests
+        run: |
+          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
+            if [ -n "${{ github.event.inputs.specifiedclass }}" ]; then
+              echo "Using specified test classes from input"
+              TEST_CLASSES="${{ github.event.inputs.specifiedclass }}"
+            else
+              TEST_FILE="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_testclass.txt"
+              if [[ -f "$TEST_FILE" ]]; then
+                TEST_CLASSES=$(paste -sd "," "$TEST_FILE")
+                echo "Read test classes from file: $TEST_CLASSES"
+              else
+                echo "Error: Test classes file not found at '$TEST_FILE' and no classes specified via input"
+                exit 1
+              fi
+            fi
+            echo "test_classes=$TEST_CLASSES" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deployment Validation (CheckOnly)
+        shell: bash
+        run: |
+          PACKAGE_XML="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_package.xml"
+          echo "Validating deployment of package: $PACKAGE_XML"
+          
+          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
+            TESTS="${{ steps.prepare_tests.outputs.test_classes }}"
+            echo "Deploy with RunSpecifiedTests: $TESTS"
+            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 30
+          else
+            echo "Deploy with test level: ${{ github.event.inputs.testlevel }}"
+            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 30
+          fi
+
+      - name: Actual Deployment
+        shell: bash
+        run: |
+          PACKAGE_XML="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_package.xml"
+          echo "Deploying package: $PACKAGE_XML"
+
+          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
+            TESTS="${{ steps.prepare_tests.outputs.test_classes }}"
+            echo "Deploying with RunSpecifiedTests: $TESTS"
+            sf project deploy --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 10
+          else
+            echo "Deploying with test level: ${{ github.event.inputs.testlevel }}"
+            sf project deploy --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 10
+          fi
+
+      - name: Cleanup
+        run: rm -f server.key
