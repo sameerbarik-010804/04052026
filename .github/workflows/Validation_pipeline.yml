@@ -1,4 +1,4 @@
-name: EMAMI Validation Pipeline val
+name: EMAMI Validation Pipeline
 
 on:
   workflow_dispatch:
@@ -11,11 +11,11 @@ on:
         type: choice
         description: Please Select The Validation Environment.
         options:
-          - EMAMI QA
-          - EMAMI QAGlobal
-          - EMAMI UAT
-          - EMAMI HOTFIX
-        default: "EMAMI QA"
+          - SIT
+          - QA
+          - UAT
+          - PROD
+        default: "QA"
         required: true
       testlevel:
         type: choice
@@ -61,28 +61,28 @@ jobs:
         run: |
           # Determine login URL based on environment name
           LOGIN_URL="${{ env.SF_LOGIN_URL_TEST }}"
-          if [[ "${{ github.event.inputs.environment }}" =~ ^EMAMI\s*(HOTFIX|UAT|QA)$ ]]; then
+          if [[ "${{ github.event.inputs.environment }}" =~ ^\s*(HOTFIX|UAT|QA)$ ]]; then
             # you can adjust logic as needed for prod/login URLs
             LOGIN_URL="${{ env.SF_LOGIN_URL_PROD }}"
           fi
 
           # Select appropriate secrets based on environment input
           case "${{ github.event.inputs.environment }}" in
-            "EMAMI QA")
-              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }}"
-              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }}"
+            "SIT")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_SIT }}"
+              USERNAME="${{ secrets.SFDX_AUTH_SIT_USERNAME }}"
               ;;
-            "EMAMI QAGlobal")
-              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QAGLOBAL }}"
-              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_QAGLOBAL_USERNAME }}"
+            "QA")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_QA }}"
+              USERNAME="${{ secrets.SFDX_AUTH_QA_USERNAME }}"
               ;;
-            "EMAMI UAT")
-              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_UAT }}"
-              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_UAT_USERNAME }}"
+            "UAT")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_UAT }}"
+              USERNAME="${{ secrets.SFDX_AUTH_UAT_USERNAME }}"
               ;;
-            "EMAMI HOTFIX")
-              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_HOTFIX }}"
-              USERNAME="${{ secrets.SFDX_AUTH_EMAMI_HOTFIX_USERNAME }}"
+            "PROD")
+              CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_PROD }}"
+              USERNAME="${{ secrets.SFDX_AUTH_PROD_USERNAME }}"
               ;;
             *)
               echo "Unknown environment: ${{ github.event.inputs.environment }}"

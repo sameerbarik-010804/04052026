@@ -1,4 +1,4 @@
-name: EMAMI Deployment Pipeline Test
+name: EMAMI Deployment Pipeline
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ on:
         required: true
       testlevel:
         type: choice
-        description: "Select Test class Run Type"
+        description: Select Test class Run Type
         options:
           - NoTestRun
           - RunLocalTests
@@ -29,7 +29,7 @@ on:
         required: true
       specifiedclass:
         type: string
-        description: Please Enter Test Class Names (comma separated).
+        description: Please Enter Test Class Names (comma separated)
         required: false
 
   push:
@@ -48,19 +48,39 @@ jobs:
       SF_LOGIN_URL_PROD: https://login.salesforce.com
       SF_ALIAS: emamiOrg
 
-      # Set inputs or fallback to github refs for push event
-      FEATURE_BRANCH: ${{ github.event.inputs.Feature_Branch != '' && github.event.inputs.Feature_Branch || github.ref_name }}
-      ENVIRONMENT: ${{ github.event.inputs.environment != '' && github.event.inputs.environment || (
-        github.ref == 'refs/heads/Dev' && 'EMAMI QA' || 
-        github.ref == 'refs/heads/qaglobal' && 'EMAMI QAGlobal' || 
-        github.ref == 'refs/heads/uat' && 'EMAMI UAT' || 
-        github.ref == 'refs/heads/hotfix' && 'EMAMI HOTFIX' 
-        || 'EMAMI QA'
-      ) }}
-      TEST_LEVEL: ${{ github.event.inputs.testlevel != '' && github.event.inputs.testlevel || 'RunSpecifiedTests' }}
-      SPECIFIED_CLASS: ${{ github.event.inputs.specifiedclass || '' }}
-
     steps:
+      - name: Set environment variables
+        run: |
+          # Set FEATURE_BRANCH from input or fallback to current branch name
+          if [ -n "${{ github.event.inputs.Feature_Branch }}" ]; then
+            echo "FEATURE_BRANCH=${{ github.event.inputs.Feature_Branch }}" >> $GITHUB_ENV
+          else
+            echo "FEATURE_BRANCH=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          fi
+
+          # Set ENVIRONMENT from input or map from branch name for push events
+          if [ -n "${{ github.event.inputs.environment }}" ]; then
+            echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          else
+            case "${GITHUB_REF##*/}" in
+              Dev) echo "ENVIRONMENT=EMAMI QA" >> $GITHUB_ENV ;;
+              qaglobal) echo "ENVIRONMENT=EMAMI QAGlobal" >> $GITHUB_ENV ;;
+              uat) echo "ENVIRONMENT=EMAMI UAT" >> $GITHUB_ENV ;;
+              hotfix) echo "ENVIRONMENT=EMAMI HOTFIX" >> $GITHUB_ENV ;;
+              *) echo "ENVIRONMENT=EMAMI QA" >> $GITHUB_ENV ;;
+            esac
+          fi
+
+          # Set TEST_LEVEL from input or default
+          if [ -n "${{ github.event.inputs.testlevel }}" ]; then
+            echo "TEST_LEVEL=${{ github.event.inputs.testlevel }}" >> $GITHUB_ENV
+          else
+            echo "TEST_LEVEL=RunSpecifiedTests" >> $GITHUB_ENV
+          fi
+
+          # SPECIFIED_CLASS (optional)
+          echo "SPECIFIED_CLASS='${{ github.event.inputs.specifiedclass || '' }}'" >> $GITHUB_ENV
+
       - name: Checkout source
         uses: actions/checkout@v4
         with:
@@ -112,7 +132,7 @@ jobs:
           echo "Logging out of previous sessions..."
           sfdx force:auth:logout --all --noprompt || true
 
-          echo "Logging into ${ENVIRONMENT} org with user ${{ steps.set-org.outputs.USERNAME }}"
+          echo "Logging in to org: ${{ steps.set-org.outputs.USERNAME }}"
           sfdx force:auth:jwt:grant \
             --clientid ${{ steps.set-org.outputs.CLIENT_ID }} \
             --jwtkeyfile server.key \
@@ -151,11 +171,11 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare test classes if RunSpecifiedTests
+      - name: Prepare test classes for RunSpecifiedTests
         id: prepare-tests
         run: |
           if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
-            if [[ -z "${{ env.SPECIFIED_CLASS }}" ]]; then
+            if [[ -z "${{ env.SPECIFIED_CLASS }}" || "${{ env.SPECIFIED_CLASS }}" == "''" ]]; then
               TEST_CLASS_FILE="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_testclass.txt"
               if [[ ! -f "$TEST_CLASS_FILE" ]]; then
                 echo "ERROR: Test class file $TEST_CLASS_FILE not found and no specifiedclass input provided."
