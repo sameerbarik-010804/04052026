@@ -141,17 +141,25 @@ jobs:
       - name: Deployment Validation 
         shell: bash
         run: |
-          PACKAGE_XML="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_package.xml"
-          echo "Validating deployment of package: $PACKAGE_XML"
-          
-          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
-            TESTS="${{ steps.prepare_tests.outputs.test_classes }}"
-            echo "Deploy with RunSpecifiedTests: $TESTS"
-            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 30
-          else
-            echo "Deploy with test level: ${{ github.event.inputs.testlevel }}"
-            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 30
+          MANIFEST="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_package.xml"
+          echo "Validating deployment of manifest: $MANIFEST"
+          TEST_LEVEL="${{ env.TEST_LEVEL }}"
+          TEST_CLASSES="${{ steps.prepare-tests.outputs.test_classes }}"
+          ORG_USERNAME="${{ steps.set-org.outputs.USERNAME }}"
+
+          echo "Test level: $TEST_LEVEL"
+          echo "Test classes: $TEST_CLASSES"
+
+          CMD=(sf project deploy validate --manifest "$MANIFEST" --target-org "$ORG_USERNAME" --test-level "$TEST_LEVEL" --wait 30 --ignore-warnings)
+
+          if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
+            # Add all specified tests as space-separated arguments after one --tests flag
+            CMD+=(--tests $TEST_CLASSES)
           fi
+
+          echo "Running validation command:"
+          echo "${CMD[@]}"
+          "${CMD[@]}"
 
       - name: Cleanup
         run: rm -f server.key
