@@ -186,7 +186,7 @@ jobs:
             fi
           fi
 
-      - name: Deployment Validation (CheckOnly)
+      - name: Deployment Validation
         shell: bash
         run: |
           MANIFEST="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_package.xml"
@@ -205,9 +205,9 @@ jobs:
           echo "Deploying manifest: $MANIFEST"
 
           if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
-            sf project deploy --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level RunSpecifiedTests --tests "${{ steps.prepare-tests.outputs.test_classes }}" --wait 10
+            sf project deploy start --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level RunSpecifiedTests --tests "${{ steps.prepare-tests.outputs.test_classes }}" --wait 10
           else
-            sf project deploy --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level "${{ env.TEST_LEVEL }}" --wait 10
+            sf project deploy start --manifest "$MANIFEST" --target-org "${{ steps.set-org.outputs.USERNAME }}" --test-level "${{ env.TEST_LEVEL }}" --wait 10
           fi
 
       - name: Cleanup JWT key
