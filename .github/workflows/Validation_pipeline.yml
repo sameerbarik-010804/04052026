@@ -32,19 +32,38 @@ on:
         description: Please Enter Test Class Names (comma separated).
         required: false
 
+  push:
+    branches:
+      - main
+      - SIT
+      - QA
+      - UAT
+
 jobs:
   Validation_Job:
     runs-on: ubuntu-latest
     env:
-      # Map environment based on input choice - add mapping if needed here
       SF_ENV_ALIAS: emamiOrg
       SF_LOGIN_URL_TEST: https://test.salesforce.com
       SF_LOGIN_URL_PROD: https://login.salesforce.com
+
+      # Determine branch to use:
+      FEATURE_BRANCH: ${{ github.event.inputs.Feature_Branch != '' && github.event.inputs.Feature_Branch || github.ref_name }}
+
+      # Determine environment to use with fallback:
+      ENVIRONMENT: ${{ github.event.inputs.environment != ''}}
+
+      # Determine test level to use:
+      TEST_LEVEL: ${{ github.event.inputs.testlevel != '' && github.event.inputs.testlevel || 'RunSpecifiedTests' }}
+
+      # Specified class, might be empty string:
+      SPECIFIED_CLASS: ${{ github.event.inputs.specifiedclass != '' && github.event.inputs.specifiedclass || '' }}
+
     steps:
       - name: Checkout branch (Feature Branch)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.Feature_Branch }}
+          ref: ${{ env.FEATURE_BRANCH }}
 
       - name: Install Salesforce CLI
         run: |
@@ -57,17 +76,16 @@ jobs:
       - name: Generate JWT Key file
         run: echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key && chmod 600 server.key
 
-      - name: Authorize to Salesforce org
+      - name: Authorize to Salesforce Org
         run: |
-          # Determine login URL based on environment name
-          LOGIN_URL="${{ env.SF_LOGIN_URL_TEST }}"
-          if [[ "${{ github.event.inputs.environment }}" =~ ^EMAMI\s*(HOTFIX|UAT)$ ]]; then
-            # you can adjust logic as needed for prod/login URLs
-            LOGIN_URL="${{ env.SF_LOGIN_URL_PROD }}"
-          fi
+          LOGIN_URL=$SF_LOGIN_URL_TEST
+          case "${{ env.ENVIRONMENT }}" in
+            "EMAMI UAT"|"EMAMI HOTFIX")
+              LOGIN_URL=$SF_LOGIN_URL_PROD
+              ;;
+          esac
 
-          # Select appropriate secrets based on environment input
-          case "${{ github.event.inputs.environment }}" in
+          case "${{ env.ENVIRONMENT }}" in
             "EMAMI QA")
               CLIENT_ID="${{ secrets.SALESFORCE_CONSUMER_KEY_EMAMI_QA }}"
               USERNAME="${{ secrets.SFDX_AUTH_EMAMI_QA_USERNAME }}"
@@ -85,7 +103,7 @@ jobs:
               USERNAME="${{ secrets.SFDX_AUTH_EMAMI_HOTFIX_USERNAME }}"
               ;;
             *)
-              echo "Unknown environment: ${{ github.event.inputs.environment }}"
+              echo "Unknown environment: ${{ env.ENVIRONMENT }}"
               exit 1
               ;;
           esac
@@ -93,10 +111,10 @@ jobs:
           echo "Logging out previous sessions..."
           sf org logout --all --no-prompt || true
 
-          echo "Authorizing to Salesforce org (${USERNAME}) with client id ${CLIENT_ID} and login url ${LOGIN_URL}..."
-          sf org login jwt --client-id "${CLIENT_ID}" --jwt-key-file server.key --username "${USERNAME}" --instance-url "${LOGIN_URL}" --alias "${{ env.SF_ENV_ALIAS }}" --set-default
+          echo "Authorizing to Salesforce org (${USERNAME}) with client id ${CLIENT_ID} on login url ${LOGIN_URL}..."
+          sf org login jwt --client-id "${CLIENT_ID}" --jwt-key-file server.key --username "${USERNAME}" --instance-url "${LOGIN_URL}" --alias "$SF_ENV_ALIAS" --set-default
 
-          sf org display --target-org "${{ env.SF_ENV_ALIAS }}"
+          sf org display --target-org "$SF_ENV_ALIAS"
 
       - name: Run Salesforce Code Analyzer
         id: run-code-analyzer
@@ -122,12 +140,12 @@ jobs:
       - name: Determine test classes for RunSpecifiedTests, if needed
         id: prepare_tests
         run: |
-          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
-            if [ -n "${{ github.event.inputs.specifiedclass }}" ]; then
+          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
+            if [ -n "${{ env.SPECIFIED_CLASS }}" ]; then
               echo "Using specified test classes from input"
-              TEST_CLASSES="${{ github.event.inputs.specifiedclass }}"
+              TEST_CLASSES="${{ env.SPECIFIED_CLASS }}"
             else
-              TEST_FILE="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_testclass.txt"
+              TEST_FILE="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_TestClass.txt"
               if [[ -f "$TEST_FILE" ]]; then
                 TEST_CLASSES=$(paste -sd "," "$TEST_FILE")
                 echo "Read test classes from file: $TEST_CLASSES"
@@ -142,31 +160,31 @@ jobs:
       - name: Deployment Validation (CheckOnly)
         shell: bash
         run: |
-          PACKAGE_XML="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_package.xml"
-          echo "Validating deployment of package: $PACKAGE_XML"
+          PACKAGE_XML="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_package.xml"
+          echo "Validating deployment with package: $PACKAGE_XML"
           
-          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
+          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
             TESTS="${{ steps.prepare_tests.outputs.test_classes }}"
             echo "Deploy with RunSpecifiedTests: $TESTS"
-            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 30
+            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "$SF_ENV_ALIAS" --test-level RunSpecifiedTests --tests "$TESTS" --wait 30
           else
-            echo "Deploy with test level: ${{ github.event.inputs.testlevel }}"
-            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 30
+            echo "Deploy with test level: ${{ env.TEST_LEVEL }}"
+            sf project deploy validate --manifest "$PACKAGE_XML" --target-org "$SF_ENV_ALIAS" --test-level "${{ env.TEST_LEVEL }}" --wait 30
           fi
 
       - name: Actual Deployment
         shell: bash
         run: |
-          PACKAGE_XML="${{ github.workspace }}/manifest/${{ github.event.inputs.Feature_Branch }}_package.xml"
+          PACKAGE_XML="${{ github.workspace }}/manifest/${{ env.FEATURE_BRANCH }}_package.xml"
           echo "Deploying package: $PACKAGE_XML"
 
-          if [[ "${{ github.event.inputs.testlevel }}" == "RunSpecifiedTests" ]]; then
+          if [[ "${{ env.TEST_LEVEL }}" == "RunSpecifiedTests" ]]; then
             TESTS="${{ steps.prepare_tests.outputs.test_classes }}"
             echo "Deploying with RunSpecifiedTests: $TESTS"
-            sf project deploy --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level RunSpecifiedTests --tests "$TESTS" --wait 10
+            sf project deploy --manifest "$PACKAGE_XML" --target-org "$SF_ENV_ALIAS" --test-level RunSpecifiedTests --tests "$TESTS" --wait 10
           else
-            echo "Deploying with test level: ${{ github.event.inputs.testlevel }}"
-            sf project deploy --manifest "$PACKAGE_XML" --target-org "${{ env.SF_ENV_ALIAS }}" --test-level "${{ github.event.inputs.testlevel }}" --wait 10
+            echo "Deploying with test level: ${{ env.TEST_LEVEL }}"
+            sf project deploy --manifest "$PACKAGE_XML" --target-org "$SF_ENV_ALIAS" --test-level "${{ env.TEST_LEVEL }}" --wait 10
           fi
 
       - name: Cleanup
