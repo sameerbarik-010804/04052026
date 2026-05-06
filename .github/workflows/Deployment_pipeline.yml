@@ -38,6 +38,7 @@ on:
       - QA
       - UAT
       - main
+      - prod
 
 jobs:
   Deployment_Job:
@@ -48,40 +49,25 @@ jobs:
       SF_LOGIN_URL_PROD: https://login.salesforce.com
       SF_ALIAS: emamiOrg
 
-    # Job runs if branch & environment match on push OR always on manual trigger
-    if: >
-      (github.event_name == 'push' &&
-       (
-         (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
-         (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
-         (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
-         ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD') ||
-          ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'QA')
-       )
-      ) ||
-      (github.event_name == 'workflow_dispatch' && 
-      (
-         (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
-         (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
-         (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
-         ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD') ||
-          ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'QA')
-       ))
-
     steps:
-      - name: Validate branch-environment consistency (manual only)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Check branch and environment consistency
         shell: bash
         run: |
-          DEPLOY_BRANCH="${GITHUB_REF##*/}"  # will be refs/heads/{branch} on push, empty on manual
-          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          RUN_BRANCH="${GITHUB_REF##*/}"
+          DEPLOY_ENV="${{ github.event.inputs.environment }}"
 
-          # On manual runs, you can skip check or enforce mapping:
-          echo "Manual run: Deployment Environment=$ENVIRONMENT. Package to deploy: ${{ github.event.inputs.Feature_Branch }}"
+          echo "Run branch: $RUN_BRANCH"
+          echo "Selected environment: $DEPLOY_ENV"
 
-          # (optional) validate mapping or skip
-          # e.g., allow user to deploy any package to any env on manual
-          # So we do no fail here
+          if [[ "$RUN_BRANCH" == "SIT" && "$DEPLOY_ENV" == "SIT" ]] || \
+             [[ "$RUN_BRANCH" == "QA" && "$DEPLOY_ENV" == "QA" ]] || \
+             [[ "$RUN_BRANCH" == "UAT" && "$DEPLOY_ENV" == "UAT" ]] || \
+             ([[ "$RUN_BRANCH" == "main" || "$RUN_BRANCH" == "prod" ]] && [[ "$DEPLOY_ENV" == "PROD" ]]); then
+            echo "Branch and environment match. Proceeding with deployment."
+          else
+            echo "Skipping deployment because branch '$RUN_BRANCH' does not match environment '$DEPLOY_ENV'."
+            exit 0
+          fi
 
       - name: Set environment variables
         shell: bash
@@ -108,7 +94,7 @@ jobs:
 
           echo "SPECIFIED_CLASS='${{ github.event.inputs.specifiedclass || '' }}'" >> $GITHUB_ENV
 
-      - name: Checkout source code (feature branch)
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           ref: ${{ env.FEATURE_BRANCH }}
@@ -158,12 +144,14 @@ jobs:
       - name: Authenticate to Salesforce Org
         run: |
           sf org logout --all --no-prompt || true
+
           sf auth jwt grant \
             --client-id "${{ steps.set-org.outputs.CLIENT_ID }}" \
             --jwt-key-file server.key \
             --username "${{ steps.set-org.outputs.USERNAME }}" \
             --instance-url "${{ steps.set-org.outputs.LOGIN_URL }}" \
             --set-default
+
           sf org display --target-org "${{ steps.set-org.outputs.USERNAME }}"
 
       - name: Run Salesforce Code Analyzer
