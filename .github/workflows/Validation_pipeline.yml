@@ -99,24 +99,24 @@ jobs:
           sf org display --target-org "${{ env.SF_ENV_ALIAS }}"
 
       - name: Run Salesforce Code Analyzer
-        id: run-code-analyzer
+        id: run-scanner
         uses: forcedotcom/run-code-analyzer@v1
         with:
           run-command: run
           run-arguments: --normalize-severity --target . --outfile results.json --json --verbose
           results-artifact-name: salesforce-code-analyzer-results
 
-      - name: Display Salesforce Scanner Report Summary
+      - name: Display Salesforce Scanner Report
         run: |
           echo "| Rule Id | Severity | File | Line | Message |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|----------|------|------|---------|" >> $GITHUB_STEP_SUMMARY
           jq -r '.[] | "|"+(.ruleId // "n/a")+"|"+(.severity // "n/a")+"|"+(.file // "n/a")+"|"+((.line|tostring) // "n/a")+"|"+(.message // "n/a")+"|"' results.json >> $GITHUB_STEP_SUMMARY
 
-      - name: Fail if critical errors found in scanner output
+      - name: Fail if critical violations found
         if: |
-          steps.run-code-analyzer.outputs.exit-code > 0 ||
-          steps.run-code-analyzer.outputs.num-sev1-violations > 0 ||
-          steps.run-code-analyzer.outputs.num-violations > 10
+          steps.run-scanner.outputs.exit-code > 0 ||
+          steps.run-scanner.outputs.num-sev1-violations > 0 ||
+          steps.run-scanner.outputs.num-violations > 10
         run: exit 1
 
       - name: Determine test classes for RunSpecifiedTests, if needed

@@ -11,11 +11,11 @@ on:
         type: choice
         description: Please Select The Deployment Environment.
         options:
-          - EMAMI QA
-          - EMAMI QAGlobal
-          - EMAMI UAT
-          - EMAMI HOTFIX
-        default: EMAMI QA
+          - SIT
+          - QA
+          - UAT
+          - PROD
+        default: QA
         required: true
       testlevel:
         type: choice
@@ -29,7 +29,7 @@ on:
         required: true
       specifiedclass:
         type: string
-        description: Please Enter Test Class Names (comma separated)
+        description: Please Enter Test Class Names (Space separated)
         required: false
 
   push:
@@ -48,7 +48,38 @@ jobs:
       SF_LOGIN_URL_PROD: https://login.salesforce.com
       SF_ALIAS: emamiOrg
 
+    # Run job only if branch matches environment, or on manual trigger
+    if: >
+      (github.event_name == 'push' &&
+       (
+         (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
+         (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
+         (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
+         (github.ref == 'refs/heads/main' && github.event.inputs.environment == 'PROD')||
+         (github.ref == 'refs/heads/main' && github.event.inputs.environment == 'QA')
+       )
+      ) ||
+      (github.event_name == 'workflow_dispatch')
+
     steps:
+      - name: Validate branch and environment (manual run only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Checking branch-environment consistency..."
+
+          FEATURE_BRANCH="${{ github.event.inputs.Feature_Branch }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+
+          case "$FEATURE_BRANCH:$ENVIRONMENT" in
+            Dev:EMAMI QA|qaglobal:EMAMI QAGlobal|uat:EMAMI UAT|hotfix:EMAMI HOTFIX)
+              echo "Branch and environment match."
+              ;;
+            *)
+              echo "ERROR: Branch '$FEATURE_BRANCH' cannot deploy to environment '$ENVIRONMENT'"
+              exit 1
+              ;;
+          esac
+
       - name: Set environment variables
         run: |
           # Set FEATURE_BRANCH from input or fallback to current branch name
@@ -90,14 +121,14 @@ jobs:
       - name: Install Salesforce CLI
         run: |
           npm install -g @salesforce/cli@latest
-          sfdx --version
+          sf --version
 
-      - name: Generate JWT Key file
+      - name: Generate JWT private key file
         run: |
           echo "${{ secrets.SALESFORCE_JWT_SECRET_KEY }}" > server.key
           chmod 600 server.key
 
-      - name: Set org credentials based on environment
+      - name: Set org credentials and login URL based on environment
         id: set-org
         run: |
           case "${{ env.ENVIRONMENT }}" in
@@ -129,18 +160,16 @@ jobs:
 
       - name: Authenticate to Salesforce Org
         run: |
-          echo "Logging out of previous sessions..."
-          sfdx force:auth:logout --all --noprompt || true
+          sf org logout --all --no-prompt || true
 
-          echo "Logging in to org: ${{ steps.set-org.outputs.USERNAME }}"
-          sfdx force:auth:jwt:grant \
-            --clientid ${{ steps.set-org.outputs.CLIENT_ID }} \
-            --jwtkeyfile server.key \
-            --username ${{ steps.set-org.outputs.USERNAME }} \
-            --instanceurl ${{ steps.set-org.outputs.LOGIN_URL }} \
-            --setdefaultdevhubusername
+          sf auth jwt grant \
+            --client-id "${{ steps.set-org.outputs.CLIENT_ID }}" \
+            --jwt-key-file server.key \
+            --username "${{ steps.set-org.outputs.USERNAME }}" \
+            --instance-url "${{ steps.set-org.outputs.LOGIN_URL }}" \
+            --set-default
 
-          sfdx force:org:display --targetusername ${{ steps.set-org.outputs.USERNAME }}
+          sf org display --target-org "${{ steps.set-org.outputs.USERNAME }}"
 
       - name: Run Salesforce Code Analyzer
         id: run-scanner
