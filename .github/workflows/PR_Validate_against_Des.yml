@@ -140,7 +140,7 @@ jobs:
           # Split space-separated string into array (handles multiple test names)
           read -ra tests_array <<< "$TEST_CLASSES"
 
-          CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH" --test-level "$TEST_LEVEL" --wait 60 --ignore-warnings)
+          CMD=(sf project deploy validate --target-org "$SF_USERNAME" --manifest "$MANIFEST_PATH"  --wait 60 --ignore-warnings --test-level "$TEST_LEVEL")
 
           if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && ${#tests_array[@]} -gt 0 ]]; then
             CMD+=(--tests)
