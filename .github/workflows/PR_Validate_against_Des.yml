@@ -1,4 +1,4 @@
-name: Salesforce PR Validation
+name: PR Validation Against Destination Org
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  Pre_validation_job:
+  Pre_Validation_Build:
     runs-on: ubuntu-latest
 
     steps:

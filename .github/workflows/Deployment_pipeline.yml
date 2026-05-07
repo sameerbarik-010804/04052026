@@ -32,15 +32,8 @@ on:
         description: Test class names (space separated, required if RunSpecifiedTests)
         required: false
 
-  push:
-    branches:
-      - SIT
-      - QA
-      - UAT
-      - main
-
 jobs:
-  Deployment_Job:
+  Deployment_Build:
     runs-on: ubuntu-latest
 
     env:
