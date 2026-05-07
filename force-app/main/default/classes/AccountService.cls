@@ -10,6 +10,7 @@ public with sharing class AccountService {
             LIMIT 1
         ];
         return acc;
+    System.debug('Data');
     }
     
     // Method to get a list of Accounts (example: first 10)
