@@ -32,6 +32,13 @@ on:
         description: Test class names (space separated, required if RunSpecifiedTests)
         required: false
 
+  push:
+    branches:
+      - SIT
+      - QA
+      - UAT
+      - main
+
 jobs:
   Deployment_Build:
     runs-on: ubuntu-latest
@@ -41,7 +48,6 @@ jobs:
       SF_LOGIN_URL_PROD: https://login.salesforce.com
       SF_ALIAS: emamiOrg
 
-    # Job runs if branch & environment match on push OR always on manual trigger
     if: >
       (github.event_name == 'push' &&
        (
@@ -51,8 +57,8 @@ jobs:
          ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD')
        )
       ) ||
-      (github.event_name == 'workflow_dispatch' && 
-      (
+      (github.event_name == 'workflow_dispatch' &&
+       (
          (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
          (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
          (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
@@ -64,15 +70,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          DEPLOY_BRANCH="${GITHUB_REF##*/}"  # will be refs/heads/{branch} on push, empty on manual
+          DEPLOY_BRANCH="${GITHUB_REF##*/}"
           ENVIRONMENT="${{ github.event.inputs.environment }}"
-
-          # On manual runs, you can skip check or enforce mapping:
           echo "Manual run: Deployment Environment=$ENVIRONMENT. Package to deploy: ${{ github.event.inputs.Feature_Branch }}"
-
-          # (optional) validate mapping or skip
-          # e.g., allow user to deploy any package to any env on manual
-          # So we do no fail here
 
       - name: Set environment variables
         shell: bash
@@ -81,19 +81,33 @@ jobs:
 
           if [ -n "${{ github.event.inputs.environment }}" ]; then
             echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+            export ENVIRONMENT="${{ github.event.inputs.environment }}"
           else
-            # Set ENVIRONMENT only if branch matches, no default fallback
             case "${GITHUB_REF##*/}" in
-              SIT) echo "ENVIRONMENT=SIT" >> $GITHUB_ENV ;;
-              QA) echo "ENVIRONMENT=QA" >> $GITHUB_ENV ;;
-              UAT) echo "ENVIRONMENT=UAT" >> $GITHUB_ENV ;;
-              main|prod) echo "ENVIRONMENT=PROD" >> $GITHUB_ENV ;;
-              # No default case, ENVIRONMENT remains unset here if no match.
+              SIT)
+                echo "ENVIRONMENT=SIT" >> $GITHUB_ENV
+                export ENVIRONMENT="SIT"
+                ;;
+              QA)
+                echo "ENVIRONMENT=QA" >> $GITHUB_ENV
+                export ENVIRONMENT="QA"
+                ;;
+              UAT)
+                echo "ENVIRONMENT=UAT" >> $GITHUB_ENV
+                export ENVIRONMENT="UAT"
+                ;;
+              main|prod)
+                echo "ENVIRONMENT=PROD" >> $GITHUB_ENV
+                export ENVIRONMENT="PROD"
+                ;;
+              *)
+                echo "ERROR: Branch '${GITHUB_REF##*/}' does not map to a known environment."
+                exit 1
+                ;;
             esac
           fi
 
-          # Fail early if ENVIRONMENT is unset or empty
-          if [[ -z "$ENVIRONMENT" ]]; then
+          if [[ -z "${ENVIRONMENT}" ]]; then
             echo "ERROR: ENVIRONMENT variable is not set or empty! Please provide a valid environment input or push to a recognized branch."
             exit 1
           fi
@@ -104,7 +118,6 @@ jobs:
             echo "TEST_LEVEL=RunSpecifiedTests" >> $GITHUB_ENV
           fi
 
-          # Handle possible empty input for specified class
           SPECIFIED_CLASS="${{ github.event.inputs.specifiedclass }}"
           if [[ "$SPECIFIED_CLASS" == "''" ]]; then
             SPECIFIED_CLASS=""
@@ -216,7 +229,6 @@ jobs:
               echo "test_classes=${{ env.SPECIFIED_CLASS }}" >> $GITHUB_OUTPUT
             fi
           else
-            # For other test levels, leave test_classes empty
             echo "test_classes=" >> $GITHUB_OUTPUT
           fi
 
@@ -232,7 +244,6 @@ jobs:
           echo "Test classes: $TEST_CLASSES"
           CMD=(sf project deploy validate --manifest "$MANIFEST" --target-org "$ORG_USERNAME" --test-level "$TEST_LEVEL" --wait 30 --ignore-warnings)
           if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
-            # Add all specified tests as space-separated arguments after one --tests flag
             CMD+=(--tests $TEST_CLASSES)
           fi
           echo "Running validation command:"
