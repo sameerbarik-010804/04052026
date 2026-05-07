@@ -48,8 +48,7 @@ jobs:
          (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
          (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
          (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
-         ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD') ||
-          ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'QA')
+         ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD')
        )
       ) ||
       (github.event_name == 'workflow_dispatch' && 
@@ -57,8 +56,7 @@ jobs:
          (github.ref == 'refs/heads/SIT' && github.event.inputs.environment == 'SIT') ||
          (github.ref == 'refs/heads/QA' && github.event.inputs.environment == 'QA') ||
          (github.ref == 'refs/heads/UAT' && github.event.inputs.environment == 'UAT') ||
-         ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD') ||
-          ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'QA')
+         ((github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prod') && github.event.inputs.environment == 'PROD')
        ))
 
     steps:
@@ -84,12 +82,20 @@ jobs:
           if [ -n "${{ github.event.inputs.environment }}" ]; then
             echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
           else
+            # Set ENVIRONMENT only if branch matches, no default fallback
             case "${GITHUB_REF##*/}" in
+              SIT) echo "ENVIRONMENT=SIT" >> $GITHUB_ENV ;;
               QA) echo "ENVIRONMENT=QA" >> $GITHUB_ENV ;;
               UAT) echo "ENVIRONMENT=UAT" >> $GITHUB_ENV ;;
               main|prod) echo "ENVIRONMENT=PROD" >> $GITHUB_ENV ;;
-              *) echo "ENVIRONMENT=QA" >> $GITHUB_ENV ;;
+              # No default case, ENVIRONMENT remains unset here if no match.
             esac
+          fi
+
+          # Fail early if ENVIRONMENT is unset or empty
+          if [[ -z "$ENVIRONMENT" ]]; then
+            echo "ERROR: ENVIRONMENT variable is not set or empty! Please provide a valid environment input or push to a recognized branch."
+            exit 1
           fi
 
           if [ -n "${{ github.event.inputs.testlevel }}" ]; then
@@ -222,17 +228,13 @@ jobs:
           TEST_LEVEL="${{ env.TEST_LEVEL }}"
           TEST_CLASSES="${{ steps.prepare-tests.outputs.test_classes }}"
           ORG_USERNAME="${{ steps.set-org.outputs.USERNAME }}"
-
           echo "Test level: $TEST_LEVEL"
           echo "Test classes: $TEST_CLASSES"
-
           CMD=(sf project deploy validate --manifest "$MANIFEST" --target-org "$ORG_USERNAME" --test-level "$TEST_LEVEL" --wait 30 --ignore-warnings)
-
           if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
             # Add all specified tests as space-separated arguments after one --tests flag
             CMD+=(--tests $TEST_CLASSES)
           fi
-
           echo "Running validation command:"
           echo "${CMD[@]}"
           "${CMD[@]}"
@@ -245,13 +247,10 @@ jobs:
           TEST_LEVEL="${{ env.TEST_LEVEL }}"
           TEST_CLASSES="${{ steps.prepare-tests.outputs.test_classes }}"
           ORG_USERNAME="${{ steps.set-org.outputs.USERNAME }}"
-
           CMD=(sf project deploy start --manifest "$MANIFEST" --target-org "$ORG_USERNAME" --test-level "$TEST_LEVEL" --wait 10 --ignore-warnings)
-
           if [[ "$TEST_LEVEL" == "RunSpecifiedTests" && -n "$TEST_CLASSES" ]]; then
             CMD+=(--tests $TEST_CLASSES)
           fi
-
           echo "Running deploy command:"
           echo "${CMD[@]}"
           "${CMD[@]}"
