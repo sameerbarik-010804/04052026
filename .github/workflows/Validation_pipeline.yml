@@ -28,7 +28,7 @@ on:
         required: true
       specifiedclass:
         type: string
-        description: Please Enter Test Class Names (comma separated).
+        description: Please Enter Test Class Names (space separated).
         required: false
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
         run: |
           # Determine login URL based on environment name
           LOGIN_URL="${{ env.SF_LOGIN_URL_TEST }}"
-          if [[ "${{ github.event.inputs.environment }}" =~ ^\s*(HOTFIX|UAT|QA)$ ]]; then
+          if [[ "${{ github.event.inputs.environment }}" =~ ^\s*(PROD|prod)$ ]]; then
             # you can adjust logic as needed for prod/login URLs
             LOGIN_URL="${{ env.SF_LOGIN_URL_PROD }}"
           fi
