@@ -8,7 +8,7 @@ public with sharing class AccountService {
             FROM Account
             WHERE Id = :accountId
             LIMIT 1
-        ];
+        ]; 
         return acc;
     }
     
